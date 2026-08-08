@@ -1,0 +1,12 @@
+# Swift Package Manager
+.build/
+Package.resolved
+
+# Xcode / SwiftPM per-user state (workspace layout, breakpoints, selected scheme)
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
