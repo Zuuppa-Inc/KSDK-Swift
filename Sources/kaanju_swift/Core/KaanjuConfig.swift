@@ -17,16 +17,23 @@ public struct KaanjuConfig: Sendable {
     /// Label for the wallet button.
     public var payWithWalletTitle: String
 
+    /// Which buyer details to collect before payment (name / email / address),
+    /// each toggled off / optional / required. Defaults to none, so the sheet
+    /// goes straight to payment. Set these to add a details step.
+    public var fields: KaanjuCheckoutFields
+
     public init(
         apiBaseURL: URL = URL(string: "https://api.kaanju.com")!,
         pollInterval: TimeInterval = 3.0,
         showPayWithWallet: Bool = true,
-        payWithWalletTitle: String = "Pay with wallet"
+        payWithWalletTitle: String = "Pay with wallet",
+        fields: KaanjuCheckoutFields = .none
     ) {
         self.apiBaseURL = apiBaseURL
         self.pollInterval = pollInterval
         self.showPayWithWallet = showPayWithWallet
         self.payWithWalletTitle = payWithWalletTitle
+        self.fields = fields
     }
 
     /// Production defaults.

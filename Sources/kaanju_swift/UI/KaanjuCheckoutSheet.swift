@@ -47,6 +47,8 @@ public struct KaanjuCheckoutScreen: View {
                 VStack(spacing: 24) {
                     if model.phase.isTerminal {
                         terminalView
+                    } else if model.needsDetails {
+                        KaanjuDetailsView(model: model) {}
                     } else {
                         payView
                     }

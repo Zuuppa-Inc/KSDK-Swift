@@ -74,6 +74,70 @@ public struct KaanjuAPI: Sendable {
         }
     }
 
+    /// POST /intents/details — attach buyer details (name / email / address) to
+    /// this intent, authorized by its `client_secret`. Only the parts you set are
+    /// sent. Returns the updated status. Public and unauthenticated for the same
+    /// reason as `status`: the secret scopes the write to this one intent.
+    public func submitDetails(
+        clientSecret: String,
+        details: KaanjuCustomerDetails
+    ) async throws -> KaanjuStatus {
+        guard clientSecret.hasPrefix("cs_") else { throw KaanjuError.missingClientSecret }
+
+        // Body mirrors the server's SubmitDetailsReq: flat name/email + nested
+        // address, plus the client_secret. Encoded via the Codable models so the
+        // snake_case keys line up.
+        struct Body: Encodable {
+            let clientSecret: String
+            let firstName: String?
+            let lastName: String?
+            let email: String?
+            let address: KaanjuAddress?
+            enum CodingKeys: String, CodingKey {
+                case email, address
+                case clientSecret = "client_secret"
+                case firstName = "first_name"
+                case lastName = "last_name"
+            }
+        }
+        let body = Body(
+            clientSecret: clientSecret,
+            firstName: details.firstName,
+            lastName: details.lastName,
+            email: details.email,
+            address: (details.address?.isEmpty ?? true) ? nil : details.address
+        )
+
+        var req = URLRequest(url: baseURL.appendingPathComponent("intents/details"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            req.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            throw KaanjuError.transport("could not encode details: \(error)")
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw KaanjuError.transport(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw KaanjuError.transport("no HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw KaanjuError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+        }
+        do {
+            return try JSONDecoder().decode(KaanjuStatus.self, from: data)
+        } catch {
+            throw KaanjuError.transport("could not decode status: \(error)")
+        }
+    }
+
     /// Pull an `{ "error": "..." }` message out of an error body, if present.
     private static func errorMessage(from data: Data) -> String? {
         guard

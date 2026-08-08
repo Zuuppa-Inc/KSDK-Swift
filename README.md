@@ -128,6 +128,44 @@ don't have to reconcile anything.
 Omit `onPayWithWallet` (or set `config.showPayWithWallet = false`) for a
 **QR-only** sheet.
 
+## Collecting buyer details (optional)
+
+The sheet can gather **first/last name**, **email**, and a full **international
+address** before payment. Every field is independently toggled off / optional /
+required — you choose exactly what to collect:
+
+```swift
+var cfg = KaanjuConfig.default
+cfg.fields.name    = .required     // .off | .optional | .required
+cfg.fields.email   = .required
+cfg.fields.address = .optional
+```
+
+When any field is enabled the sheet shows a **details step first**, then moves on
+to the QR / pay view. The address step uses a **searchable, localized global
+country picker** (every ISO country, flag + name) — not US-only. Required fields
+are validated (including a basic email check) before continuing; an all-optional
+set can be skipped.
+
+The details are submitted from the app with the intent's `client_secret` (the
+same read-only token the SDK already holds — the secret key never touches the
+client) to `POST /intents/details`, and are then attached to the intent. Your
+server sees them on the intent's status and on webhook/dashboard payloads:
+
+```jsonc
+"customer_details": {
+  "first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com",
+  "address": {
+    "country": "GB",          // ISO 3166-1 alpha-2
+    "line1": "12 Baker St", "line2": null,
+    "city": "London", "state": null, "postal_code": "NW1 6XE"
+  }
+}
+```
+
+Nothing is collected by default (`cfg.fields == .none`), so existing integrations
+are unchanged and go straight to payment.
+
 ## Statuses the sheet handles
 
 Driven by the server's real state machine:

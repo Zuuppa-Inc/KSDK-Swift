@@ -27,6 +27,11 @@ public struct KaanjuPreviewHarness: View {
     @State private var mint: String = ""
     @State private var reference: String = ""
 
+    // Which buyer details to collect, so the details step is testable end to end.
+    @State private var nameReq: KaanjuFieldRequirement = .off
+    @State private var emailReq: KaanjuFieldRequirement = .off
+    @State private var addressReq: KaanjuFieldRequirement = .off
+
     @State private var creating = false
     @State private var error: String?
     @State private var intent: KaanjuIntent?
@@ -63,6 +68,12 @@ public struct KaanjuPreviewHarness: View {
                     LabeledField(label: mint.isEmpty ? "Amount (SOL)" : "Amount (base units)", text: $amountSOL, mono: true)
                     LabeledField(label: "SPL mint (blank = SOL)", text: $mint, mono: true)
                     LabeledField(label: "Reference (optional)", text: $reference)
+                }
+
+                Section("Collect buyer details") {
+                    requirementPicker("Name", selection: $nameReq)
+                    requirementPicker("Email", selection: $emailReq)
+                    requirementPicker("Address", selection: $addressReq)
                 }
 
                 Section {
@@ -108,7 +119,20 @@ public struct KaanjuPreviewHarness: View {
             c.apiBaseURL = url
         }
         c.pollInterval = 2.0
+        c.fields = KaanjuCheckoutFields(name: nameReq, email: emailReq, address: addressReq)
         return c
+    }
+
+    private func requirementPicker(
+        _ label: String,
+        selection: Binding<KaanjuFieldRequirement>
+    ) -> some View {
+        Picker(label, selection: selection) {
+            Text("Off").tag(KaanjuFieldRequirement.off)
+            Text("Optional").tag(KaanjuFieldRequirement.optional)
+            Text("Required").tag(KaanjuFieldRequirement.required)
+        }
+        .pickerStyle(.menu)
     }
 
     private func create() async {
@@ -235,6 +259,15 @@ extension KaanjuStatus {
 #Preview("Checkout — QR only (offline)") {
     var cfg = KaanjuConfig.default
     cfg.showPayWithWallet = false
+    return KaanjuCheckoutScreen(intent: .previewPending, config: cfg)
+}
+
+// Static: the buyer-details step (name required, email required, address
+// optional). No server needed — the layout renders; Continue would attempt a
+// submit against the fake client_secret.
+#Preview("Checkout — details step (offline)") {
+    var cfg = KaanjuConfig.default
+    cfg.fields = KaanjuCheckoutFields(name: .required, email: .required, address: .optional)
     return KaanjuCheckoutScreen(intent: .previewPending, config: cfg)
 }
 #endif
