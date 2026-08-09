@@ -238,6 +238,52 @@ public struct KaanjuAPI: Sendable {
         }
     }
 
+    /// POST /intents/cancel — cancel a checkout by its `client_secret` (called
+    /// when the buyer closes/dismisses the sheet before completing payment).
+    /// Authorized by the `client_secret`, same trust model as `selectToken`.
+    /// Idempotent server-side; refused (409) once a payment has landed. Returns
+    /// the updated status.
+    public func cancel(clientSecret: String) async throws -> KaanjuStatus {
+        guard clientSecret.hasPrefix("cs_") else { throw KaanjuError.missingClientSecret }
+
+        struct Body: Encodable {
+            let clientSecret: String
+            enum CodingKeys: String, CodingKey {
+                case clientSecret = "client_secret"
+            }
+        }
+        let body = Body(clientSecret: clientSecret)
+
+        var req = URLRequest(url: baseURL.appendingPathComponent("intents/cancel"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            req.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            throw KaanjuError.transport("could not encode cancel request: \(error)")
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw KaanjuError.transport(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw KaanjuError.transport("no HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw KaanjuError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+        }
+        do {
+            return try JSONDecoder().decode(KaanjuStatus.self, from: data)
+        } catch {
+            throw KaanjuError.transport("could not decode status: \(error)")
+        }
+    }
+
     /// Pull an `{ "error": "..." }` message out of an error body, if present.
     private static func errorMessage(from data: Data) -> String? {
         guard

@@ -331,11 +331,14 @@ public enum KaanjuPhase: Sendable, Equatable {
     case refunded
     /// A refund failed and needs support. Terminal-ish.
     case refundFailed
+    /// The checkout was cancelled (timed out or dismissed) before completing.
+    /// Terminal.
+    case cancelled
 
     /// Whether this phase is terminal (polling can stop).
     public var isTerminal: Bool {
         switch self {
-        case .settled, .expired, .refunded, .refundFailed: return true
+        case .settled, .expired, .refunded, .refundFailed, .cancelled: return true
         default: return false
         }
     }
@@ -351,6 +354,7 @@ public enum KaanjuPhase: Sendable, Equatable {
         case "refunding": return .refunding
         case "refunded": return .refunded
         case "refund_failed": return .refundFailed
+        case "cancelled": return .cancelled
         default: return .awaitingPayment
         }
     }

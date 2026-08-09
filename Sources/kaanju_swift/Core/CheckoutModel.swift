@@ -50,6 +50,7 @@ public final class CheckoutModel {
     private let onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)?
     private var pollTask: Task<Void, Never>?
     private var didFinish = false
+    private var didCancel = false
 
     public init(
         intent: KaanjuIntent,
@@ -89,6 +90,7 @@ public final class CheckoutModel {
         case .settled: return .settled(status?.settlement)
         case .expired: return .expired
         case .refunded: return .refunded
+        case .cancelled: return .cancelled
         default: return .cancelled
         }
     }
@@ -109,6 +111,24 @@ public final class CheckoutModel {
     public func stop() {
         pollTask?.cancel()
         pollTask = nil
+    }
+
+    /// Cancel the checkout when the buyer can no longer resume it (they closed or
+    /// swiped away the sheet before a terminal state). Stops polling and tells the
+    /// server to cancel the intent immediately — a partial payment is refunded,
+    /// otherwise the intent is marked `cancelled`. Fire-and-forget: the request is
+    /// detached with a value-captured client so it completes even as the model is
+    /// torn down, and any failure is harmless because the server's 10-minute
+    /// timeout is the backstop. No-op once terminal or already cancelled.
+    public func cancel() {
+        guard !phase.isTerminal, !didCancel else { return }
+        didCancel = true
+        stop()
+        guard let secret = intent.clientSecret, secret.hasPrefix("cs_") else { return }
+        let api = self.api
+        Task.detached {
+            _ = try? await api.cancel(clientSecret: secret)
+        }
     }
 
     /// Run the host's wallet callback. The poll loop keeps running, so however

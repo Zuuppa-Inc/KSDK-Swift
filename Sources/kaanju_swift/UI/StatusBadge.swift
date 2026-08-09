@@ -28,6 +28,7 @@ struct StatusBadge: View {
         case .refunding: return "Refunding"
         case .refunded: return "Refunded"
         case .refundFailed: return "Refund issue"
+        case .cancelled: return "Cancelled"
         }
     }
 
@@ -41,6 +42,7 @@ struct StatusBadge: View {
         case .refunding: return .orange
         case .refunded: return .blue
         case .refundFailed: return .red
+        case .cancelled: return .gray
         }
     }
 }

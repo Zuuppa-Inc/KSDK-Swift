@@ -10,6 +10,11 @@ import UIKit
 public struct KaanjuCheckoutScreen: View {
     @State private var model: CheckoutModel
     private let onFinish: ((KaanjuCheckoutResult) -> Void)?
+    /// Guards `onFinish` to exactly one call — a checkout can reach terminal via
+    /// polling (`onChange`) OR be cancelled on dismissal (`onDisappear`); without
+    /// this both paths could fire. `@State`'s setter is nonmutating, so the guard
+    /// works from the escaping view-lifecycle closures below.
+    @State private var didFinish = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -59,11 +64,29 @@ public struct KaanjuCheckoutScreen: View {
             }
         }
         .onAppear { model.start() }
-        .onDisappear { model.stop() }
-        // Fire onFinish exactly once when we reach a terminal phase.
-        .onChange(of: model.phase) { _, newPhase in
-            if newPhase.isTerminal { onFinish?(model.result) }
+        // Dismissal is the single cancel point: whether the buyer taps the X or
+        // swipes the sheet away, if the checkout is still resumable we cancel it
+        // (server returns partial funds / marks it cancelled) and finish once.
+        // Once terminal there's nothing to cancel — just stop polling.
+        .onDisappear {
+            if !model.phase.isTerminal {
+                model.cancel()
+                fireFinishOnce(.cancelled)
+            }
+            model.stop()
         }
+        // Fire onFinish exactly once when we reach a terminal phase via polling.
+        .onChange(of: model.phase) { _, newPhase in
+            if newPhase.isTerminal { fireFinishOnce(model.result) }
+        }
+    }
+
+    /// Invoke `onFinish` at most once across the terminal-poll path and the
+    /// dismiss-cancel path.
+    private func fireFinishOnce(_ result: KaanjuCheckoutResult) {
+        guard !didFinish else { return }
+        didFinish = true
+        onFinish?(result)
     }
 
     // MARK: - Header
@@ -74,8 +97,8 @@ public struct KaanjuCheckoutScreen: View {
                 .font(.headline)
             Spacer()
             Button {
-                // Dismissing before terminal is a cancellation.
-                if !model.phase.isTerminal { onFinish?(.cancelled) }
+                // Just dismiss — `.onDisappear` is the single cancel point and
+                // handles the cancel + one-shot finish (same as swipe-to-dismiss).
                 dismiss()
             } label: {
                 Image(systemName: "xmark.circle.fill")
@@ -249,6 +272,7 @@ public struct KaanjuCheckoutScreen: View {
         case .settled: return "checkmark.circle.fill"
         case .refunded: return "arrow.uturn.left.circle.fill"
         case .refundFailed: return "exclamationmark.triangle.fill"
+        case .cancelled: return "xmark.circle.fill"
         default: return "clock.badge.xmark.fill"
         }
     }
@@ -258,6 +282,7 @@ public struct KaanjuCheckoutScreen: View {
         case .settled: return .green
         case .refunded: return .blue
         case .refundFailed: return .red
+        case .cancelled: return .gray
         default: return .gray
         }
     }
@@ -268,6 +293,7 @@ public struct KaanjuCheckoutScreen: View {
         case .refunded: return "Funds returned"
         case .refundFailed: return "Refund needs attention"
         case .expired: return "Payment expired"
+        case .cancelled: return "Checkout cancelled"
         default: return "Done"
         }
     }
