@@ -18,6 +18,27 @@ import SwiftUI
 /// #endif
 /// ```
 /// or just open the `#Preview`s at the bottom of this file in Xcode.
+/// The three intent shapes the harness can create.
+private enum HarnessMode: String, CaseIterable, Identifiable {
+    /// custom + fixed token amount (legacy: expected_lamports/mint).
+    case customToken = "Custom · token"
+    /// custom + USD amount (buyer picks a token to lock it).
+    case customUSD = "Custom · USD"
+    /// order (cart priced server-side from catalog items).
+    case order = "Order"
+    var id: String { rawValue }
+}
+
+/// One editable cart row for order mode.
+private struct HarnessCartLine: Identifiable {
+    let id = UUID()
+    var itemID: String = "39d7ac65-cd48-4179-8ea9-f6cf88bca646"
+    var quantity: String = "1"
+}
+
+/// USDC (mainnet) mint — offered as a preset accepted token in USD/order modes.
+private let harnessUSDCMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
 public struct KaanjuPreviewHarness: View {
     // Simulator reaches the host Mac's localhost directly; a device needs the
     // Mac's LAN IP here instead.
@@ -26,6 +47,16 @@ public struct KaanjuPreviewHarness: View {
     @State private var amountSOL: String = "0.01"
     @State private var mint: String = ""
     @State private var reference: String = ""
+
+    // Pricing mode + USD/order fields.
+    @State private var mode: HarnessMode = .customToken
+    @State private var amountUSD: String = "5.00"
+    // Accepted pay-in tokens (USD/order modes). The buyer picks among these.
+    @State private var acceptSOL = true
+    @State private var acceptUSDC = false
+    @State private var customTokenMint = ""
+    // Order-mode cart: item id + quantity rows.
+    @State private var cart: [HarnessCartLine] = [HarnessCartLine()]
 
     // Which buyer details to collect, so the details step is testable end to end.
     @State private var nameReq: KaanjuFieldRequirement = .off
@@ -64,10 +95,44 @@ public struct KaanjuPreviewHarness: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Section("Intent") {
-                    LabeledField(label: mint.isEmpty ? "Amount (SOL)" : "Amount (base units)", text: $amountSOL, mono: true)
-                    LabeledField(label: "SPL mint (blank = SOL)", text: $mint, mono: true)
-                    LabeledField(label: "Reference (optional)", text: $reference)
+                Section("Mode") {
+                    Picker("Mode", selection: $mode) {
+                        ForEach(HarnessMode.allCases) { m in Text(m.rawValue).tag(m) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                switch mode {
+                case .customToken:
+                    Section("Intent (fixed token amount)") {
+                        LabeledField(label: mint.isEmpty ? "Amount (SOL)" : "Amount (base units)", text: $amountSOL, mono: true)
+                        LabeledField(label: "SPL mint (blank = SOL)", text: $mint, mono: true)
+                        LabeledField(label: "Reference (optional)", text: $reference)
+                    }
+                case .customUSD:
+                    Section("Intent (USD-priced)") {
+                        LabeledField(label: "Amount (USD)", text: $amountUSD, mono: true)
+                        LabeledField(label: "Reference (optional)", text: $reference)
+                    }
+                    acceptedTokensSection
+                case .order:
+                    Section("Cart (item id + quantity)") {
+                        ForEach($cart) { $line in
+                            HStack(spacing: 8) {
+                                LabeledField(label: "Item id", text: $line.itemID, mono: true)
+                                LabeledField(label: "Qty", text: $line.quantity, mono: true)
+                                    .frame(width: 64)
+                            }
+                        }
+                        Button("Add line") { cart.append(HarnessCartLine()) }
+                            .font(.footnote)
+                        if cart.count > 1 {
+                            Button("Remove last", role: .destructive) { cart.removeLast() }
+                                .font(.footnote)
+                        }
+                        LabeledField(label: "Reference (optional)", text: $reference)
+                    }
+                    acceptedTokensSection
                 }
 
                 Section("Collect buyer details") {
@@ -113,6 +178,25 @@ public struct KaanjuPreviewHarness: View {
         )
     }
 
+    /// Accepted pay-in tokens the buyer chooses among (USD/order modes).
+    private var acceptedTokensSection: some View {
+        Section("Accepted tokens (buyer picks one)") {
+            Toggle("SOL", isOn: $acceptSOL)
+            Toggle("USDC", isOn: $acceptUSDC)
+            LabeledField(label: "Custom SPL mint (optional)", text: $customTokenMint, mono: true)
+        }
+    }
+
+    /// Build the `accepted_tokens` array for the current toggles.
+    private func buildAcceptedTokens() -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        if acceptSOL { out.append(["kind": "sol"]) }
+        if acceptUSDC { out.append(["kind": "spl", "mint": harnessUSDCMint]) }
+        let custom = customTokenMint.trimmingCharacters(in: .whitespaces)
+        if !custom.isEmpty { out.append(["kind": "spl", "mint": custom]) }
+        return out
+    }
+
     private var harnessConfig: KaanjuConfig {
         var c = KaanjuConfig.default
         if let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces)) {
@@ -143,13 +227,38 @@ public struct KaanjuPreviewHarness: View {
             error = "Invalid base URL"; return
         }
         let client = KaanjuDebugClient(baseURL: url, apiKey: apiKey.trimmingCharacters(in: .whitespaces))
-        let expected = parsedExpected()
+        let ref = reference.isEmpty ? nil : reference
         do {
-            let created = try await client.createIntent(
-                expectedLamports: expected,
-                mint: mint.isEmpty ? nil : mint,
-                reference: reference.isEmpty ? nil : reference
-            )
+            let created: KaanjuIntent
+            switch mode {
+            case .customToken:
+                created = try await client.createIntent(
+                    expectedLamports: parsedExpected(),
+                    mint: mint.isEmpty ? nil : mint,
+                    reference: ref
+                )
+            case .customUSD:
+                let tokens = buildAcceptedTokens()
+                guard !tokens.isEmpty else { error = "Select at least one accepted token."; return }
+                guard let cents = parsedUSDCents() else { error = "Invalid USD amount."; return }
+                created = try await client.createIntent(
+                    reference: ref,
+                    mode: "custom",
+                    amountUsdCents: cents,
+                    acceptedTokens: tokens
+                )
+            case .order:
+                let tokens = buildAcceptedTokens()
+                guard !tokens.isEmpty else { error = "Select at least one accepted token."; return }
+                let lines = buildCart()
+                guard !lines.isEmpty else { error = "Add at least one cart line (item id + qty)."; return }
+                created = try await client.createIntent(
+                    reference: ref,
+                    mode: "order",
+                    acceptedTokens: tokens,
+                    cart: lines
+                )
+            }
             guard created.clientSecret != nil else {
                 error = "Server returned no client_secret. (Reusing a reference returns the existing intent without one — change the reference.)"
                 return
@@ -159,6 +268,26 @@ public struct KaanjuPreviewHarness: View {
         } catch {
             self.error = (error as? KaanjuError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    /// USD dollars → integer cents (for custom+USD mode).
+    private func parsedUSDCents() -> Int64? {
+        let raw = amountUSD.trimmingCharacters(in: .whitespaces)
+        guard let usd = Double(raw), usd > 0 else { return nil }
+        return Int64((usd * 100).rounded())
+    }
+
+    /// Build the order-mode cart payload from the editable rows, dropping blanks.
+    private func buildCart() -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        for line in cart {
+            let id = line.itemID.trimmingCharacters(in: .whitespaces)
+            guard !id.isEmpty, let qty = Int(line.quantity.trimmingCharacters(in: .whitespaces)), qty > 0 else {
+                continue
+            }
+            out.append(["item_id": id, "quantity": qty])
+        }
+        return out
     }
 
     /// SOL amount → lamports, or raw base units when a mint is set.
@@ -222,6 +351,26 @@ extension KaanjuIntent {
         receivedLamports: 0,
         reference: "preview-order"
     )
+
+    /// A pending USD-priced intent ($12.50) with two accepted tokens and no locked
+    /// asset yet — drives the token-select step preview.
+    static let previewUsdUnlocked = KaanjuIntent(
+        id: "33333333-3333-3333-3333-333333333333",
+        address: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+        clientSecret: "cs_preview_only",
+        mint: nil,
+        mintDecimals: nil,
+        expectedLamports: nil,
+        status: "pending",
+        receivedLamports: 0,
+        reference: "preview-usd",
+        mode: "custom",
+        priceUsdCents: 1250,
+        acceptedTokens: [
+            KaanjuAcceptedToken(kind: "sol"),
+            KaanjuAcceptedToken(kind: "spl", mint: harnessUSDCMint, decimals: 6, symbol: "USDC"),
+        ]
+    )
 }
 
 extension KaanjuStatus {
@@ -253,6 +402,13 @@ extension KaanjuStatus {
 // renders. Good for iterating on UI.
 #Preview("Checkout — awaiting (offline)") {
     KaanjuCheckoutScreen(intent: .previewPending)
+}
+
+// Static: the token-select step for a USD-priced intent. No server needed — the
+// per-token quote amounts stay blank (the quote call fails softly against the fake
+// client_secret); the token rows + USD total render.
+#Preview("Checkout — token select (offline)") {
+    KaanjuCheckoutScreen(intent: .previewUsdUnlocked)
 }
 
 // Static: QR-only variant (no wallet button).

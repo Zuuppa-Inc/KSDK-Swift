@@ -47,6 +47,8 @@ public struct KaanjuCheckoutScreen: View {
                 VStack(spacing: 24) {
                     if model.phase.isTerminal {
                         terminalView
+                    } else if model.needsTokenSelection {
+                        KaanjuTokenSelectView(model: model) {}
                     } else if model.needsDetails {
                         KaanjuDetailsView(model: model) {}
                     } else {
@@ -139,18 +141,37 @@ public struct KaanjuCheckoutScreen: View {
 
     private var amountView: some View {
         VStack(spacing: 4) {
-            if let expected = model.intent.expectedLamports {
-                Text(KaanjuAmount.format(expected, for: model.intent))
+            if let expected = model.payExpectedLamports {
+                // A locked/fixed amount: show it in the pinned asset.
+                Text(KaanjuAmount.format(expected, decimals: model.payDecimals, symbol: model.payAssetLabel))
                     .font(.system(size: 34, weight: .bold, design: .rounded))
+            } else if let cents = model.intent.priceUsdCents {
+                // USD-priced but no token chosen yet (shouldn't normally reach the
+                // pay view, but render the USD total defensively).
+                Text(Self.formatUSD(cents))
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                Text("Choose a token to pay")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else {
                 Text("Any amount")
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
             }
-            Text(model.intent.isSOL ? "Solana" : "SPL token")
+            Text(payAssetSubtitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var payAssetSubtitle: String {
+        (model.lockedMint ?? model.intent.mint) == nil ? "Solana" : "SPL token"
+    }
+
+    /// Format integer USD cents as a "$X.YY" string.
+    static func formatUSD(_ cents: Int64) -> String {
+        let dollars = Double(cents) / 100.0
+        return String(format: "$%.2f", dollars)
     }
 
     private var addressView: some View {

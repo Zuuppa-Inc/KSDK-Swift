@@ -30,6 +30,22 @@ public final class CheckoutModel {
     /// True while a details submission is in flight.
     public private(set) var isSubmittingDetails = false
 
+    /// True while the buyer must pick a pay-in token before paying (USD-priced
+    /// intent whose amount isn't locked yet). Cleared once a token is selected.
+    public private(set) var needsTokenSelection: Bool
+    /// Per-token preview amounts for the token-select step (nil until loaded).
+    public private(set) var quotes: KaanjuQuote?
+    /// True while a token selection (lock) is in flight.
+    public private(set) var isSelectingToken = false
+    /// The mint the buyer selected (nil = SOL); set once selection succeeds.
+    public private(set) var selectedMint: String?
+    /// The locked amount after a selection (drives the pay view for USD intents).
+    public private(set) var lockedExpectedLamports: Int64?
+    /// The locked asset's mint after selection (nil = SOL).
+    public private(set) var lockedMint: String?
+    /// The locked asset's decimals after selection.
+    public private(set) var lockedDecimals: Int?
+
     private let api: KaanjuAPI
     private let onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)?
     private var pollTask: Task<Void, Never>?
@@ -48,9 +64,18 @@ public final class CheckoutModel {
         // Show the details step first only when the integrator configured fields
         // to collect AND we can actually submit them (we need a client_secret).
         self.needsDetails = config.fields.collectsAnything && intent.clientSecret != nil
+        // Show the token-select step for a USD-priced intent whose amount isn't
+        // locked yet (and only when we can actually select — need a client_secret).
+        self.needsTokenSelection = intent.needsTokenSelection && intent.clientSecret != nil
         // Seed the phase from the intent's initial status so the UI isn't blank
         // before the first poll returns.
         self.phase = KaanjuPhase.from(action: Self.actionFromStatus(intent.status), shortfall: nil)
+    }
+
+    /// The accepted tokens the buyer may choose among (empty when the asset is
+    /// already pinned). Sourced from the intent.
+    public var acceptedTokens: [KaanjuAcceptedToken] {
+        intent.acceptedTokens ?? []
     }
 
     /// Whether the "Pay with wallet" button should be shown.
@@ -187,6 +212,62 @@ public final class CheckoutModel {
         return !f.name.isRequired && !f.email.isRequired && !f.address.isRequired
     }
 
+    // MARK: - Token selection (USD-priced intents)
+
+    /// Load per-token preview amounts for the token-select step. Non-fatal on
+    /// error — the buyer can still pick a token (which computes its amount then).
+    public func loadQuotes() {
+        guard let secret = intent.clientSecret else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let q = try await self.api.quote(clientSecret: secret)
+                await MainActor.run { self.quotes = q }
+            } catch {
+                // Preview is best-effort; selecting a token still works without it.
+            }
+        }
+    }
+
+    /// The preview amount for one accepted token, if quotes are loaded.
+    public func quoteLine(for token: KaanjuAcceptedToken) -> KaanjuQuoteLine? {
+        quotes?.quotes.first { $0.mint == token.mint }
+    }
+
+    /// Select a pay-in token: locks the amount server-side (USD → base units at
+    /// spot) and advances past the token-select step. `mint == nil` = SOL. On a
+    /// network error we surface it and stay on the step. `onDone` runs only on
+    /// success (so the UI can move to payment).
+    public func selectToken(mint: String?, onDone: @escaping () -> Void) {
+        guard !isSelectingToken else { return }
+        guard let secret = intent.clientSecret else {
+            // No secret to authorize the selection — can't proceed on this path.
+            errorMessage = KaanjuError.missingClientSecret.localizedDescription
+            return
+        }
+        isSelectingToken = true
+        errorMessage = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let s = try await self.api.selectToken(clientSecret: secret, mint: mint)
+                await MainActor.run {
+                    self.selectedMint = mint
+                    self.apply(s)
+                    self.isSelectingToken = false
+                    self.needsTokenSelection = false
+                    onDone()
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = (error as? KaanjuError)?.errorDescription
+                        ?? error.localizedDescription
+                    self.isSelectingToken = false
+                }
+            }
+        }
+    }
+
     /// Trim all fields and drop blanks before sending.
     private func normalizedDetails() -> KaanjuCustomerDetails {
         func c(_ s: String?) -> String? {
@@ -246,6 +327,31 @@ public final class CheckoutModel {
         status = s
         errorMessage = nil
         phase = KaanjuPhase.from(action: s.action, shortfall: s.shortfallLamports)
+        // Once the amount is locked (by a token selection), capture the pinned
+        // asset so the pay view can render the amount even though the immutable
+        // `intent` was created without it.
+        if let locked = s.expectedLamports {
+            lockedExpectedLamports = locked
+            lockedMint = s.mint
+            lockedDecimals = s.mint == nil ? 9 : s.mintDecimals
+        }
+    }
+
+    /// The amount to display/QR-encode on the pay view: the locked amount (once a
+    /// USD-priced intent's token is selected) else the intent's fixed amount.
+    public var payExpectedLamports: Int64? {
+        lockedExpectedLamports ?? intent.expectedLamports
+    }
+
+    /// The asset label to display on the pay view (reflects a locked selection).
+    public var payAssetLabel: String {
+        (lockedMint ?? intent.mint) ?? "SOL"
+    }
+
+    /// The decimals to use when formatting the pay amount (reflects a selection).
+    public var payDecimals: Int {
+        if let d = lockedDecimals { return d }
+        return intent.decimals
     }
 
     /// Map a raw intent `status` string to the equivalent `action` string used

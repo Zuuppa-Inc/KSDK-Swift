@@ -1,5 +1,41 @@
 import Foundation
 
+/// A pay-in token the buyer may choose among for a USD-priced intent. Mirrors the
+/// server's `accepted_tokens` array element: either native SOL (`kind == "sol"`)
+/// or an SPL token (`kind == "spl"`) pinned by mint. Decimals/symbol are captured
+/// authoritatively by the server; the SDK only displays them.
+public struct KaanjuAcceptedToken: Codable, Identifiable, Sendable, Equatable {
+    /// "sol" or "spl".
+    public let kind: String
+    /// SPL mint address (nil for SOL).
+    public let mint: String?
+    /// Base-unit decimals (nil for SOL, which is 9).
+    public let decimals: Int?
+    /// Display symbol hint (e.g. "USDC"); may be nil.
+    public let symbol: String?
+
+    public init(kind: String, mint: String? = nil, decimals: Int? = nil, symbol: String? = nil) {
+        self.kind = kind
+        self.mint = mint
+        self.decimals = decimals
+        self.symbol = symbol
+    }
+
+    /// Stable id for SwiftUI lists — the mint, or "sol" for native SOL.
+    public var id: String { mint ?? "sol" }
+
+    /// True for native SOL.
+    public var isSOL: Bool { kind == "sol" || mint == nil }
+
+    /// A human label to show in the picker: the symbol, else SOL / a short mint.
+    public var displayLabel: String {
+        if isSOL { return "SOL" }
+        if let s = symbol, !s.isEmpty { return s }
+        guard let m = mint else { return "Token" }
+        return m.count > 12 ? "\(m.prefix(4))…\(m.suffix(4))" : m
+    }
+}
+
 /// A payment intent, as returned by the Kaanju API. This is what your server
 /// gets back from `POST /intents` and passes down to the app to hand to the SDK.
 ///
@@ -30,13 +66,23 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
     public let receivedLamports: Int64
     /// Your caller reference (order id / memo), if you set one.
     public let reference: String?
+    /// Pricing mode: "custom" or "order". Absent on legacy responses (treat as
+    /// "custom").
+    public let mode: String?
+    /// USD price in integer cents for a USD-denominated intent (nil for a
+    /// fixed-token amount). When set, the buyer selects a token to lock the amount.
+    public let priceUsdCents: Int64?
+    /// Pay-in tokens the buyer may choose among (nil once the asset is pinned).
+    public let acceptedTokens: [KaanjuAcceptedToken]?
 
     enum CodingKeys: String, CodingKey {
-        case id, address, mint, reference, status
+        case id, address, mint, reference, status, mode
         case clientSecret = "client_secret"
         case mintDecimals = "mint_decimals"
         case expectedLamports = "expected_lamports"
         case receivedLamports = "received_lamports"
+        case priceUsdCents = "price_usd_cents"
+        case acceptedTokens = "accepted_tokens"
     }
 
     public init(
@@ -48,7 +94,10 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
         expectedLamports: Int64? = nil,
         status: String = "pending",
         receivedLamports: Int64 = 0,
-        reference: String? = nil
+        reference: String? = nil,
+        mode: String? = nil,
+        priceUsdCents: Int64? = nil,
+        acceptedTokens: [KaanjuAcceptedToken]? = nil
     ) {
         self.id = id
         self.address = address
@@ -59,6 +108,9 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
         self.status = status
         self.receivedLamports = receivedLamports
         self.reference = reference
+        self.mode = mode
+        self.priceUsdCents = priceUsdCents
+        self.acceptedTokens = acceptedTokens
     }
 
     /// True for SOL (no SPL mint).
@@ -69,6 +121,15 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
 
     /// Human asset symbol: "SOL" or the mint address.
     public var assetLabel: String { mint ?? "SOL" }
+
+    /// True when the amount is denominated in USD (buyer picks a token to lock it).
+    public var isUsdPriced: Bool { priceUsdCents != nil }
+
+    /// The buyer must choose a pay-in token before paying: the amount isn't locked
+    /// yet (no `expectedLamports`) and there are accepted tokens to choose from.
+    public var needsTokenSelection: Bool {
+        expectedLamports == nil && (acceptedTokens?.isEmpty == false)
+    }
 }
 
 /// A wrong-token refund entry, surfaced alongside the SOL status when the buyer
@@ -129,14 +190,22 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
     public let tokenRefunds: [KaanjuTokenRefund]
     /// Actual settled amounts once swept (nil until then).
     public let settlement: KaanjuSettlement?
+    /// Pricing mode: "custom" or "order" (absent on legacy responses).
+    public let mode: String?
+    /// USD price in integer cents for a USD-denominated intent (nil for fixed).
+    public let priceUsdCents: Int64?
+    /// Pay-in tokens the buyer may choose among (nil once the asset is pinned).
+    public let acceptedTokens: [KaanjuAcceptedToken]?
 
     enum CodingKeys: String, CodingKey {
-        case id, address, mint, status, reference, action, message, settlement
+        case id, address, mint, status, reference, action, message, settlement, mode
         case mintDecimals = "mint_decimals"
         case expectedLamports = "expected_lamports"
         case receivedLamports = "received_lamports"
         case shortfallLamports = "shortfall_lamports"
         case tokenRefunds = "token_refunds"
+        case priceUsdCents = "price_usd_cents"
+        case acceptedTokens = "accepted_tokens"
     }
 
     public init(from decoder: Decoder) throws {
@@ -155,6 +224,9 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
         // `token_refunds` is omitted entirely when empty (serde skip), so default.
         tokenRefunds = try c.decodeIfPresent([KaanjuTokenRefund].self, forKey: .tokenRefunds) ?? []
         settlement = try c.decodeIfPresent(KaanjuSettlement.self, forKey: .settlement)
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
+        priceUsdCents = try c.decodeIfPresent(Int64.self, forKey: .priceUsdCents)
+        acceptedTokens = try c.decodeIfPresent([KaanjuAcceptedToken].self, forKey: .acceptedTokens)
     }
 
     // Encoding is only needed for tests/round-trips; not used by the SDK at runtime.
@@ -173,11 +245,71 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
         try c.encodeIfPresent(shortfallLamports, forKey: .shortfallLamports)
         if !tokenRefunds.isEmpty { try c.encode(tokenRefunds, forKey: .tokenRefunds) }
         try c.encodeIfPresent(settlement, forKey: .settlement)
+        try c.encodeIfPresent(mode, forKey: .mode)
+        try c.encodeIfPresent(priceUsdCents, forKey: .priceUsdCents)
+        try c.encodeIfPresent(acceptedTokens, forKey: .acceptedTokens)
     }
 
     public var isSOL: Bool { mint == nil }
     public var decimals: Int { mint == nil ? 9 : (mintDecimals ?? 0) }
     public var assetLabel: String { mint ?? "SOL" }
+
+    /// True when the amount is denominated in USD (buyer picks a token to lock it).
+    public var isUsdPriced: Bool { priceUsdCents != nil }
+
+    /// The buyer must choose a pay-in token before paying (amount not yet locked).
+    public var needsTokenSelection: Bool {
+        expectedLamports == nil && (acceptedTokens?.isEmpty == false)
+    }
+}
+
+/// A single per-token amount for a USD-priced intent, as returned by the quote
+/// endpoint — what one accepted token would cost right now.
+public struct KaanjuQuoteLine: Codable, Identifiable, Sendable, Equatable {
+    /// SPL mint (nil for native SOL).
+    public let mint: String?
+    /// Display symbol (e.g. "SOL", "USDC").
+    public let symbol: String
+    /// Base-unit decimals.
+    public let decimals: Int
+    /// Amount in the token's base units.
+    public let expectedLamports: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case mint, symbol, decimals
+        case expectedLamports = "expected_lamports"
+    }
+
+    public init(mint: String?, symbol: String, decimals: Int, expectedLamports: Int64) {
+        self.mint = mint
+        self.symbol = symbol
+        self.decimals = decimals
+        self.expectedLamports = expectedLamports
+    }
+
+    /// Stable id for SwiftUI lists.
+    public var id: String { mint ?? "sol" }
+}
+
+/// The quote response: per-token preview amounts for a USD-priced intent, plus
+/// the USD price and how long the quote is considered fresh. Purely a preview —
+/// selecting a token (not quoting) is what locks the amount.
+public struct KaanjuQuote: Codable, Sendable, Equatable {
+    public let priceUsdCents: Int64
+    public let expiresInSeconds: Int
+    public let quotes: [KaanjuQuoteLine]
+
+    enum CodingKeys: String, CodingKey {
+        case quotes
+        case priceUsdCents = "price_usd_cents"
+        case expiresInSeconds = "expires_in_seconds"
+    }
+
+    public init(priceUsdCents: Int64, expiresInSeconds: Int, quotes: [KaanjuQuoteLine]) {
+        self.priceUsdCents = priceUsdCents
+        self.expiresInSeconds = expiresInSeconds
+        self.quotes = quotes
+    }
 }
 
 /// A high-level phase for the checkout UI, derived from the server's `action`.
