@@ -104,4 +104,91 @@ final class KaanjuDetailsTests: XCTestCase {
         XCTAssertEqual(KaanjuCountries.country(for: "us")?.code, "US")
         XCTAssertNil(KaanjuCountries.country(for: "ZZ"))
     }
+
+    /// Going back to token selection is only offered when it preceded details,
+    /// and re-showing it keeps entered details.
+    @MainActor
+    func testBackToTokenSelectionOnlyWhenItPreceded() {
+        // A fixed-token intent has no token-select step → no back affordance.
+        var cfg = KaanjuConfig.default
+        cfg.fields.name = .required
+        let noSelection = CheckoutModel(intent: intent, config: cfg)
+        XCTAssertFalse(noSelection.canGoBackToTokenSelection)
+        noSelection.backToTokenSelection()
+        XCTAssertFalse(noSelection.needsTokenSelection) // no-op
+
+        // A USD-priced intent with accepted tokens has token selection first.
+        let usdIntent = KaanjuIntent(
+            id: "33333333-3333-3333-3333-333333333333",
+            address: "So1anaAddrExample1111111111111111111111111",
+            clientSecret: "cs_abc123",
+            priceUsdCents: 500,
+            acceptedTokens: [KaanjuAcceptedToken(kind: "native", mint: nil, symbol: "SOL")]
+        )
+        let model = CheckoutModel(intent: usdIntent, config: cfg)
+        XCTAssertTrue(model.needsTokenSelection)
+        // Simulate having moved past selection to details.
+        model.details.firstName = "Ada"
+        XCTAssertTrue(model.canGoBackToTokenSelection)
+        model.backToTokenSelection()
+        XCTAssertTrue(model.needsTokenSelection) // back on the token step
+        XCTAssertEqual(model.details.firstName, "Ada") // details preserved
+    }
+
+    // MARK: - Per-country address format
+
+    /// The format adapts field presence and labels per country.
+    func testAddressFormatAdaptsPerCountry() {
+        let us = KaanjuAddressFormat.resolve(for: "US")
+        XCTAssertTrue(us.showState)
+        XCTAssertTrue(us.stateRequired)
+        XCTAssertEqual(us.stateLabel, "State")
+        XCTAssertEqual(us.postalLabel, "ZIP code")
+
+        let gb = KaanjuAddressFormat.resolve(for: "gb") // case-insensitive
+        XCTAssertFalse(gb.showState)
+        XCTAssertTrue(gb.showPostal)
+        XCTAssertEqual(gb.postalLabel, "Postcode")
+
+        let jp = KaanjuAddressFormat.resolve(for: "JP")
+        XCTAssertEqual(jp.stateLabel, "Prefecture")
+
+        let ie = KaanjuAddressFormat.resolve(for: "IE")
+        XCTAssertEqual(ie.postalLabel, "Eircode")
+
+        // Hong Kong has no postal-code system.
+        let hk = KaanjuAddressFormat.resolve(for: "HK")
+        XCTAssertFalse(hk.showPostal)
+
+        // Unknown / nil falls back to the default (city + postal, no state).
+        let def = KaanjuAddressFormat.resolve(for: nil)
+        XCTAssertFalse(def.showState)
+        XCTAssertTrue(def.showPostal)
+        XCTAssertEqual(def.cityLabel, "City")
+        XCTAssertEqual(def.postalLabel, "Postal code")
+    }
+
+    /// Validation follows the country's format: the US requires a state and ZIP;
+    /// a no-postal country (HK) is valid without a postal code.
+    @MainActor
+    func testValidationFollowsCountryFormat() {
+        var cfg = KaanjuConfig.default
+        cfg.fields.address = .required
+        let model = CheckoutModel(intent: intent, config: cfg)
+
+        // US without a state is invalid...
+        model.details.address = KaanjuAddress(
+            country: "US", line1: "1 Infinite Loop", city: "Cupertino", postalCode: "95014"
+        )
+        XCTAssertNotNil(model.validateDetails())
+        // ...valid once the state is filled.
+        model.details.address?.state = "CA"
+        XCTAssertNil(model.validateDetails())
+
+        // Hong Kong: no postal code needed, no state.
+        model.details.address = KaanjuAddress(
+            country: "HK", line1: "8 Finance St", city: "Central"
+        )
+        XCTAssertNil(model.validateDetails())
+    }
 }

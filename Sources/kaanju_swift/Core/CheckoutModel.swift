@@ -33,6 +33,9 @@ public final class CheckoutModel {
     /// True while the buyer must pick a pay-in token before paying (USD-priced
     /// intent whose amount isn't locked yet). Cleared once a token is selected.
     public private(set) var needsTokenSelection: Bool
+    /// Whether token selection was ever a step for this checkout. Stays true after
+    /// a token is picked, so the details step knows it can offer a "back" button.
+    private let hadTokenSelectionStep: Bool
     /// Per-token preview amounts for the token-select step (nil until loaded).
     public private(set) var quotes: KaanjuQuote?
     /// True while a token selection (lock) is in flight.
@@ -76,7 +79,11 @@ public final class CheckoutModel {
         self.needsDetails = config.fields.collectsAnything && intent.clientSecret != nil
         // Show the token-select step for a USD-priced intent whose amount isn't
         // locked yet (and only when we can actually select — need a client_secret).
-        self.needsTokenSelection = intent.needsTokenSelection && intent.clientSecret != nil
+        let tokenSelection = intent.needsTokenSelection && intent.clientSecret != nil
+        self.needsTokenSelection = tokenSelection
+        // Remember whether token selection was a step at all, so the details step
+        // can offer a "back" affordance only when it followed token selection.
+        self.hadTokenSelectionStep = tokenSelection
         // Seed the phase from the intent's initial status so the UI isn't blank
         // before the first poll returns.
         self.phase = KaanjuPhase.from(action: Self.actionFromStatus(intent.status), shortfall: nil)
@@ -86,7 +93,7 @@ public final class CheckoutModel {
     /// already pinned). Sourced from the intent.
     public var acceptedTokens: [KaanjuAcceptedToken] {
         intent.acceptedTokens ?? []
-    }
+    } 
 
     // MARK: - Token names / tickers
 
@@ -233,8 +240,16 @@ public final class CheckoutModel {
             let a = d.address ?? KaanjuAddress()
             if (a.country ?? "").trimmed.isEmpty { return "Please select your country." }
             if (a.line1 ?? "").trimmed.isEmpty { return "Please enter your street address." }
-            if (a.city ?? "").trimmed.isEmpty { return "Please enter your city." }
-            if (a.postalCode ?? "").trimmed.isEmpty { return "Please enter your postal code." }
+            // Required-ness follows the country's own format: some countries have
+            // no postal code, and only some collect (and require) a state/region.
+            let fmt = KaanjuAddressFormat.resolve(for: a.country)
+            if (a.city ?? "").trimmed.isEmpty { return "Please enter your \(fmt.cityLabel.lowercased())." }
+            if fmt.showState, fmt.stateRequired, (a.state ?? "").trimmed.isEmpty {
+                return "Please enter your \(fmt.stateLabel.lowercased())."
+            }
+            if fmt.showPostal, (a.postalCode ?? "").trimmed.isEmpty {
+                return "Please enter your \(fmt.postalLabel.lowercased())."
+            }
         }
         return nil
     }
@@ -281,6 +296,21 @@ public final class CheckoutModel {
     /// Skip an all-optional details step without submitting.
     public func skipDetails() {
         needsDetails = false
+    }
+
+    /// Whether the details step can go back to the token-select step — only when
+    /// token selection preceded it (so details wasn't the opening screen) and no
+    /// submission is in flight.
+    public var canGoBackToTokenSelection: Bool {
+        hadTokenSelectionStep && !isSubmittingDetails
+    }
+
+    /// Return from the details step to the token-select step, re-showing it so the
+    /// buyer can change their pay-in token. Keeps any details they've entered.
+    public func backToTokenSelection() {
+        guard canGoBackToTokenSelection else { return }
+        errorMessage = nil
+        needsTokenSelection = true
     }
 
     /// Whether the details step may be skipped (nothing is required).

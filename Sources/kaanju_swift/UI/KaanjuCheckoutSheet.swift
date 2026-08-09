@@ -53,30 +53,38 @@ struct KaanjuCheckoutScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            ScrollView {
-                VStack(spacing: 24) {
-                    if model.phase.isTerminal {
-                        terminalView
-                    } else if model.needsTokenSelection {
-                        KaanjuTokenSelectView(model: model) {}
-                    } else if model.needsDetails {
-                        KaanjuDetailsView(model: model) {}
-                    } else {
-                        payView
+            if showsDetailsStep {
+                // The details step manages its own scroll + pinned Continue button.
+                // Its vertical padding lives *inside* the view so it's part of the
+                // measured height (fields + footer), keeping the detent exact; only
+                // the horizontal inset is applied here. Comes after token selection
+                // (if any), matching the original order.
+                KaanjuDetailsView(model: model) {}
+                    .padding(.horizontal, 24)
+            } else {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        if model.phase.isTerminal {
+                            terminalView
+                        } else if model.needsTokenSelection {
+                            KaanjuTokenSelectView(model: model) {}
+                        } else {
+                            payView
+                        }
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+                    // Measure the content so the sheet can size itself to fit exactly.
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: ContentHeightKey.self, value: proxy.size.height)
+                        }
+                    )
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
-                // Measure the content so the sheet can size itself to fit exactly.
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(key: ContentHeightKey.self, value: proxy.size.height)
-                    }
-                )
+                // The content grows/shrinks between steps (token-select → pay →
+                // terminal); don't let the ScrollView bounce when it already fits.
+                .scrollBounceBehavior(.basedOnSize)
             }
-            // The content grows/shrinks between steps (token-select → pay →
-            // terminal); don't let the ScrollView bounce when it already fits.
-            .scrollBounceBehavior(.basedOnSize)
         }
         .frame(maxWidth: .infinity)
         .foregroundStyle(KaanjuColor.textPrimary)
@@ -120,19 +128,44 @@ struct KaanjuCheckoutScreen: View {
     /// the measured content, so the sheet is exactly as tall as it needs to be and
     /// re-sizes as the buyer moves between steps. Before the first measurement we
     /// fall back to `.medium` so the sheet has a sane initial size.
+    /// Whether the details step is the current step: shown after any token
+    /// selection (matching the branch order below) and never once terminal.
+    private var showsDetailsStep: Bool {
+        !model.phase.isTerminal && !model.needsTokenSelection && model.needsDetails
+    }
+
     private var sheetDetents: Set<PresentationDetent> {
         guard contentHeight > 0 else { return [.medium] }
-        // headerHeight ≈ X button (32) + top padding (12).
+        // headerHeight ≈ X button (32) + top padding (12). All step padding is now
+        // inside the measured `contentHeight`, so nothing step-specific is added.
         let headerHeight: CGFloat = 44
+        // A single content-sized detent. When the content is taller than the sheet
+        // can be, `.height` clamps to the max and the step's own ScrollView takes
+        // over — so a long address form scrolls on-screen.
         return [.height(headerHeight + contentHeight)]
     }
 
     // MARK: - Header
 
-    // A bare X in the top-right, matching Stripe's PaymentSheet nav bar: no title,
-    // no filled background — just the glyph, tinted like a secondary control.
+    // A bare X in the top-right, matching Stripe's PaymentSheet nav bar. On the
+    // details step it also carries a centered "Your details" title, overlaid so
+    // it stays centered regardless of the close button on the right.
     private var header: some View {
         HStack {
+            // A back chevron on the details step, but only when token selection
+            // preceded it (so details wasn't the opening screen).
+            if showsDetailsStep, model.canGoBackToTokenSelection {
+                Button {
+                    model.backToTokenSelection()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(KaanjuColor.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Back")
+            }
             Spacer()
             Button {
                 // Just dismiss — `.onDisappear` is the single cancel point and
@@ -146,6 +179,13 @@ struct KaanjuCheckoutScreen: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Close")
+        }
+        .overlay {
+            if showsDetailsStep {
+                Text("Your details")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(KaanjuColor.textPrimary)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
@@ -348,7 +388,9 @@ struct KaanjuCheckoutScreen: View {
 }
 
 /// Carries the measured content height up so the sheet can size itself to fit.
-private struct ContentHeightKey: PreferenceKey {
+/// Shared with `KaanjuDetailsView`, which measures its own (fields + footer)
+/// natural height so the details step sizes to content like every other step.
+struct ContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
