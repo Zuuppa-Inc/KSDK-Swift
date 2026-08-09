@@ -3,11 +3,12 @@ import SwiftUI
 import UIKit
 
 /// The checkout screen itself: QR + address + amount + status, a "Pay with
-/// wallet" button that runs the host's callback, and a settled/expired
+/// wallet" button that runs the host's callback, and a settled/cancelled
 /// confirmation. Drives itself from a `CheckoutModel`.
 ///
-/// Present it directly, or use the `.kaanjuCheckout(...)` modifier for a sheet.
-public struct KaanjuCheckoutScreen: View {
+/// Internal — the SDK's single public entry point is the `.kaanjuCheckout(...)`
+/// sheet modifier, which wraps this view. Not presented directly by hosts.
+struct KaanjuCheckoutScreen: View {
     @State private var model: CheckoutModel
     private let onFinish: ((KaanjuCheckoutResult) -> Void)?
     /// Guards `onFinish` to exactly one call — a checkout can reach terminal via
@@ -27,7 +28,7 @@ public struct KaanjuCheckoutScreen: View {
     ///     wallet button. Omit (or set `config.showPayWithWallet = false`) for a
     ///     QR-only sheet.
     ///   - onFinish: called once with the terminal result.
-    public init(
+    init(
         intent: KaanjuIntent,
         config: KaanjuConfig = .default,
         session: URLSession = .shared,
@@ -45,7 +46,7 @@ public struct KaanjuCheckoutScreen: View {
         self.onFinish = onFinish
     }
 
-    public var body: some View {
+    var body: some View {
         VStack(spacing: 0) {
             header
             ScrollView {

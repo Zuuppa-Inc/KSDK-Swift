@@ -36,6 +36,40 @@ public struct KaanjuAcceptedToken: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+/// One line of an order-mode intent's cart snapshot, as captured at checkout.
+/// Present on order intents everywhere the intent is exposed (create response,
+/// `/status`, and outbound webhooks); absent for custom intents. Prices are the
+/// values charged at checkout, so they're stable even if the catalog changes.
+public struct KaanjuLineItem: Codable, Identifiable, Sendable, Equatable {
+    /// Current catalog item id, or nil if the item was deleted after the order.
+    public let itemId: String?
+    /// Display name charged at checkout.
+    public let name: String
+    /// Unit price in integer USD cents, as charged at checkout.
+    public let unitPriceUsdCents: Int64
+    /// Quantity ordered.
+    public let quantity: Int
+
+    enum CodingKeys: String, CodingKey {
+        case name, quantity
+        case itemId = "item_id"
+        case unitPriceUsdCents = "unit_price_usd_cents"
+    }
+
+    public init(itemId: String? = nil, name: String, unitPriceUsdCents: Int64, quantity: Int) {
+        self.itemId = itemId
+        self.name = name
+        self.unitPriceUsdCents = unitPriceUsdCents
+        self.quantity = quantity
+    }
+
+    /// Stable id for SwiftUI lists — the catalog id, else the name.
+    public var id: String { itemId ?? name }
+
+    /// Line total in USD cents (unit price × quantity).
+    public var lineTotalUsdCents: Int64 { unitPriceUsdCents * Int64(quantity) }
+}
+
 /// A payment intent, as returned by the Kaanju API. This is what your server
 /// gets back from `POST /intents` and passes down to the app to hand to the SDK.
 ///
@@ -74,6 +108,9 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
     public let priceUsdCents: Int64?
     /// Pay-in tokens the buyer may choose among (nil once the asset is pinned).
     public let acceptedTokens: [KaanjuAcceptedToken]?
+    /// Cart snapshot for order-mode intents (empty for custom). Same items the
+    /// dashboard and outbound webhooks see.
+    public let lineItems: [KaanjuLineItem]
 
     enum CodingKeys: String, CodingKey {
         case id, address, mint, reference, status, mode
@@ -83,6 +120,7 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
         case receivedLamports = "received_lamports"
         case priceUsdCents = "price_usd_cents"
         case acceptedTokens = "accepted_tokens"
+        case lineItems = "line_items"
     }
 
     public init(
@@ -97,7 +135,8 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
         reference: String? = nil,
         mode: String? = nil,
         priceUsdCents: Int64? = nil,
-        acceptedTokens: [KaanjuAcceptedToken]? = nil
+        acceptedTokens: [KaanjuAcceptedToken]? = nil,
+        lineItems: [KaanjuLineItem] = []
     ) {
         self.id = id
         self.address = address
@@ -111,6 +150,45 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
         self.mode = mode
         self.priceUsdCents = priceUsdCents
         self.acceptedTokens = acceptedTokens
+        self.lineItems = lineItems
+    }
+
+    // Custom decode so `line_items` (omitted for custom intents) defaults to []
+    // rather than throwing on the missing key.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        address = try c.decode(String.self, forKey: .address)
+        clientSecret = try c.decodeIfPresent(String.self, forKey: .clientSecret)
+        mint = try c.decodeIfPresent(String.self, forKey: .mint)
+        mintDecimals = try c.decodeIfPresent(Int.self, forKey: .mintDecimals)
+        expectedLamports = try c.decodeIfPresent(Int64.self, forKey: .expectedLamports)
+        status = try c.decode(String.self, forKey: .status)
+        receivedLamports = try c.decode(Int64.self, forKey: .receivedLamports)
+        reference = try c.decodeIfPresent(String.self, forKey: .reference)
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
+        priceUsdCents = try c.decodeIfPresent(Int64.self, forKey: .priceUsdCents)
+        acceptedTokens = try c.decodeIfPresent([KaanjuAcceptedToken].self, forKey: .acceptedTokens)
+        lineItems = try c.decodeIfPresent([KaanjuLineItem].self, forKey: .lineItems) ?? []
+    }
+
+    // Encoding mirrors the wire shape: omit `line_items` when empty (matches the
+    // server's serde skip), so round-trips are stable.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(address, forKey: .address)
+        try c.encodeIfPresent(clientSecret, forKey: .clientSecret)
+        try c.encodeIfPresent(mint, forKey: .mint)
+        try c.encodeIfPresent(mintDecimals, forKey: .mintDecimals)
+        try c.encodeIfPresent(expectedLamports, forKey: .expectedLamports)
+        try c.encode(status, forKey: .status)
+        try c.encode(receivedLamports, forKey: .receivedLamports)
+        try c.encodeIfPresent(reference, forKey: .reference)
+        try c.encodeIfPresent(mode, forKey: .mode)
+        try c.encodeIfPresent(priceUsdCents, forKey: .priceUsdCents)
+        try c.encodeIfPresent(acceptedTokens, forKey: .acceptedTokens)
+        if !lineItems.isEmpty { try c.encode(lineItems, forKey: .lineItems) }
     }
 
     /// True for SOL (no SPL mint).
@@ -196,6 +274,9 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
     public let priceUsdCents: Int64?
     /// Pay-in tokens the buyer may choose among (nil once the asset is pinned).
     public let acceptedTokens: [KaanjuAcceptedToken]?
+    /// Cart snapshot for order-mode intents (empty for custom). Same items the
+    /// dashboard and outbound webhooks see.
+    public let lineItems: [KaanjuLineItem]
 
     enum CodingKeys: String, CodingKey {
         case id, address, mint, status, reference, action, message, settlement, mode
@@ -206,6 +287,7 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
         case tokenRefunds = "token_refunds"
         case priceUsdCents = "price_usd_cents"
         case acceptedTokens = "accepted_tokens"
+        case lineItems = "line_items"
     }
 
     public init(from decoder: Decoder) throws {
@@ -227,6 +309,8 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
         mode = try c.decodeIfPresent(String.self, forKey: .mode)
         priceUsdCents = try c.decodeIfPresent(Int64.self, forKey: .priceUsdCents)
         acceptedTokens = try c.decodeIfPresent([KaanjuAcceptedToken].self, forKey: .acceptedTokens)
+        // `line_items` is omitted for custom intents (serde skip), so default.
+        lineItems = try c.decodeIfPresent([KaanjuLineItem].self, forKey: .lineItems) ?? []
     }
 
     // Encoding is only needed for tests/round-trips; not used by the SDK at runtime.
@@ -248,6 +332,7 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
         try c.encodeIfPresent(mode, forKey: .mode)
         try c.encodeIfPresent(priceUsdCents, forKey: .priceUsdCents)
         try c.encodeIfPresent(acceptedTokens, forKey: .acceptedTokens)
+        if !lineItems.isEmpty { try c.encode(lineItems, forKey: .lineItems) }
     }
 
     public var isSOL: Bool { mint == nil }

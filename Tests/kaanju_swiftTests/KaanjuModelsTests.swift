@@ -165,6 +165,84 @@ final class KaanjuModelsTests: XCTestCase {
         XCTAssertEqual(again.acceptedTokens?.count, 1)
     }
 
+    /// An order-mode intent carries its cart snapshot as `line_items`, decoded
+    /// into `KaanjuLineItem`s with the charged prices.
+    func testDecodeOrderLineItems() throws {
+        let json = """
+        {
+          "id": "77777777-7777-7777-7777-777777777777",
+          "address": "So1anaAddrExample1111111111111111111111111",
+          "client_secret": "cs_order",
+          "mint": null,
+          "mint_decimals": null,
+          "expected_lamports": null,
+          "status": "pending",
+          "received_lamports": 0,
+          "reference": "order-cart",
+          "mode": "order",
+          "price_usd_cents": 1500,
+          "line_items": [
+            { "item_id": "aaaaaaaa-0000-0000-0000-000000000001", "name": "T-shirt", "unit_price_usd_cents": 500, "quantity": 2 },
+            { "item_id": null, "name": "Sticker", "unit_price_usd_cents": 500, "quantity": 1 }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let intent = try JSONDecoder().decode(KaanjuIntent.self, from: json)
+        XCTAssertEqual(intent.lineItems.count, 2)
+        let shirt = intent.lineItems.first
+        XCTAssertEqual(shirt?.name, "T-shirt")
+        XCTAssertEqual(shirt?.quantity, 2)
+        XCTAssertEqual(shirt?.unitPriceUsdCents, 500)
+        XCTAssertEqual(shirt?.lineTotalUsdCents, 1000)
+        XCTAssertEqual(shirt?.id, "aaaaaaaa-0000-0000-0000-000000000001")
+        // A deleted catalog item has a null id; the name is the stable list id.
+        XCTAssertNil(intent.lineItems.last?.itemId)
+        XCTAssertEqual(intent.lineItems.last?.id, "Sticker")
+
+        // Round-trip: line_items survive encode → decode.
+        let again = try JSONDecoder().decode(KaanjuIntent.self, from: JSONEncoder().encode(intent))
+        XCTAssertEqual(again.lineItems.count, 2)
+
+        // A KaanjuStatus for the same order surfaces the identical shape.
+        let statusJSON = """
+        {
+          "id": "77777777-7777-7777-7777-777777777777",
+          "address": "So1anaAddrExample1111111111111111111111111",
+          "mint": null, "mint_decimals": null, "expected_lamports": null,
+          "status": "pending", "received_lamports": 0, "reference": "order-cart",
+          "action": "waiting", "message": "Awaiting payment.", "mode": "order",
+          "line_items": [
+            { "item_id": null, "name": "Sticker", "unit_price_usd_cents": 500, "quantity": 3 }
+          ]
+        }
+        """.data(using: .utf8)!
+        let status = try JSONDecoder().decode(KaanjuStatus.self, from: statusJSON)
+        XCTAssertEqual(status.lineItems.count, 1)
+        XCTAssertEqual(status.lineItems.first?.quantity, 3)
+    }
+
+    /// A custom intent omits `line_items` entirely (server serde skip); it must
+    /// default to an empty array rather than fail to decode.
+    func testCustomIntentHasEmptyLineItems() throws {
+        let json = """
+        {
+          "id": "88888888-8888-8888-8888-888888888888",
+          "address": "So1anaAddrExample1111111111111111111111111",
+          "client_secret": "cs_custom",
+          "mint": null, "mint_decimals": null,
+          "expected_lamports": 10000000, "status": "pending",
+          "received_lamports": 0, "reference": null
+        }
+        """.data(using: .utf8)!
+
+        let intent = try JSONDecoder().decode(KaanjuIntent.self, from: json)
+        XCTAssertTrue(intent.lineItems.isEmpty)
+        // Empty line_items are omitted on encode (matches the wire shape).
+        let encoded = String(data: try JSONEncoder().encode(intent), encoding: .utf8)!
+        XCTAssertFalse(encoded.contains("line_items"))
+    }
+
     /// The quote response maps snake_case keys and per-token lines.
     func testDecodeQuote() throws {
         let json = """
