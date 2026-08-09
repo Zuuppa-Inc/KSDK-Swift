@@ -19,7 +19,7 @@ struct KaanjuTokenSelectView: View {
                 }
                 Text("Choose how to pay")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(KaanjuColor.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
@@ -34,54 +34,96 @@ struct KaanjuTokenSelectView: View {
                     ProgressView()
                     Text("Computing total…")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(KaanjuColor.textSecondary)
                 }
             }
 
             if let err = model.errorMessage {
                 Text(err)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(KaanjuColor.danger)
                     .multilineTextAlignment(.center)
             }
         }
-        .onAppear { model.loadQuotes() }
+        // Note: we intentionally don't load/show per-token conversion quotes here —
+        // the buyer just picks a token; the amount is locked on the next step.
+        .onAppear { model.resolveTokenNames() }
     }
 
     private func tokenRow(_ token: KaanjuAcceptedToken) -> some View {
         Button {
             model.selectToken(mint: token.mint, onDone: onContinue)
         } label: {
-            HStack {
+            HStack(spacing: 12) {
+                TokenLogo(url: model.meta(for: token)?.iconURL, fallback: model.ticker(for: token))
+
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(token.displayLabel)
+                    Text(model.displayName(for: token))
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    if token.isSOL {
-                        Text("Solana")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("SPL token")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                        .foregroundStyle(KaanjuColor.textPrimary)
+                    Text(model.ticker(for: token))
+                        .font(.caption)
+                        .foregroundStyle(KaanjuColor.textSecondary)
                 }
                 Spacer()
-                if let line = model.quoteLine(for: token) {
-                    Text(KaanjuAmount.format(line.expectedLamports, decimals: line.decimals, symbol: line.symbol))
-                        .font(.system(.body, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
                 Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(KaanjuColor.textTertiary)
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
-            .background(RoundedRectangle(cornerRadius: 12).stroke(.quaternary))
+            .background(RoundedRectangle(cornerRadius: 12).fill(KaanjuColor.surface))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(KaanjuColor.border))
         }
+        // Plain style so nothing inside the label (the logo image especially) gets
+        // tinted with the accent color — a templated logo would render as a solid
+        // accent blob.
+        .buttonStyle(.plain)
         .disabled(model.isSelectingToken)
+    }
+}
+
+/// A small round token logo, loaded async from the directory's icon URL. Falls
+/// back to a monogram circle (first letter of the ticker) while loading or when
+/// there's no logo — so the row layout is stable either way.
+struct TokenLogo: View {
+    let url: URL?
+    let fallback: String
+
+    private let size: CGFloat = 32
+
+    var body: some View {
+        Group {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        // `.original` keeps the logo's real colors — otherwise a
+                        // button/label context can tint it to the accent color.
+                        image
+                            .renderingMode(.original)
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        monogram
+                    }
+                }
+            } else {
+                monogram
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(KaanjuColor.border, lineWidth: 0.5))
+    }
+
+    private var monogram: some View {
+        ZStack {
+            KaanjuColor.surface
+            Text(fallback.prefix(1).uppercased())
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(KaanjuColor.textSecondary)
+        }
     }
 }
 #endif

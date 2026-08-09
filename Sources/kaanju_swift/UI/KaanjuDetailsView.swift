@@ -27,7 +27,7 @@ struct KaanjuDetailsView: View {
             if let err = model.errorMessage {
                 Text(err)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(KaanjuColor.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -39,7 +39,7 @@ struct KaanjuDetailsView: View {
                     onContinue()
                 }
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(KaanjuColor.textSecondary)
             }
         }
     }
@@ -92,14 +92,14 @@ struct KaanjuDetailsView: View {
     private var continueButton: some View {
         Button(action: { model.submitDetails(onDone: onContinue) }) {
             HStack {
-                if model.isSubmittingDetails { ProgressView().tint(.white) }
+                if model.isSubmittingDetails { ProgressView().tint(KaanjuColor.accentText) }
                 Text(model.isSubmittingDetails ? "Saving…" : "Continue")
                     .fontWeight(.semibold)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(Color.accentColor)
-            .foregroundStyle(.white)
+            .background(KaanjuColor.accent)
+            .foregroundStyle(KaanjuColor.accentText)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .disabled(model.isSubmittingDetails)
@@ -110,8 +110,8 @@ struct KaanjuDetailsView: View {
     private func field(_ label: String, required: Bool, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 2) {
-                Text(label).font(.caption).foregroundStyle(.secondary)
-                if required { Text("*").font(.caption).foregroundStyle(.red) }
+                Text(label).font(.caption).foregroundStyle(KaanjuColor.textSecondary)
+                if required { Text("*").font(.caption).foregroundStyle(KaanjuColor.danger) }
             }
             TextField(label, text: text)
                 .textFieldStyle(.roundedBorder)
@@ -153,25 +153,25 @@ struct KaanjuCountryPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 2) {
-                Text("Country").font(.caption).foregroundStyle(.secondary)
-                if required { Text("*").font(.caption).foregroundStyle(.red) }
+                Text("Country").font(.caption).foregroundStyle(KaanjuColor.textSecondary)
+                if required { Text("*").font(.caption).foregroundStyle(KaanjuColor.danger) }
             }
             Button { showList = true } label: {
                 HStack {
                     if let c = selected {
                         Text(c.flag)
-                        Text(c.name).foregroundStyle(.primary)
+                        Text(c.name).foregroundStyle(KaanjuColor.textPrimary)
                     } else {
-                        Text("Select country").foregroundStyle(.secondary)
+                        Text("Select country").foregroundStyle(KaanjuColor.textSecondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(KaanjuColor.textSecondary)
                 }
                 .padding(.vertical, 10)
                 .padding(.horizontal, 12)
-                .background(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
+                .background(RoundedRectangle(cornerRadius: 8).stroke(KaanjuColor.border))
             }
         }
         .sheet(isPresented: $showList) {
@@ -204,10 +204,10 @@ private struct KaanjuCountryList: View {
                 } label: {
                     HStack {
                         Text(country.flag)
-                        Text(country.name).foregroundStyle(.primary)
+                        Text(country.name).foregroundStyle(KaanjuColor.textPrimary)
                         Spacer()
                         if country.code == selectedCode.uppercased() {
-                            Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                            Image(systemName: "checkmark").foregroundStyle(KaanjuColor.accent)
                         }
                     }
                 }

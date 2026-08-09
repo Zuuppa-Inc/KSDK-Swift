@@ -54,7 +54,7 @@ public struct KaanjuPreviewHarness: View {
     // Accepted pay-in tokens (USD/order modes). The buyer picks among these.
     @State private var acceptSOL = true
     @State private var acceptUSDC = false
-    @State private var customTokenMint = ""
+    @State private var customTokenMint = "FeR8VBqNRSUD5NtXAj2n3j1dAHkZHfyDktKuLXD4pump"
     // Order-mode cart: item id + quantity rows.
     @State private var cart: [HarnessCartLine] = [HarnessCartLine()]
 
@@ -76,7 +76,7 @@ public struct KaanjuPreviewHarness: View {
 
     public init(
         baseURL: String = "http://localhost:8080",
-        apiKey: String = "sk_live_4A4zgjuXxCiwqkEy16jb2AghGEfuHBH5L",
+        apiKey: String = "",
         onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)? = nil
     ) {
         _baseURL = State(initialValue: baseURL)
@@ -394,7 +394,7 @@ extension KaanjuStatus {
 // Interactive: point it at your local server and run the whole flow. Requires
 // the server running (`cargo run` in kaanju/server) and a valid sk_ key.
 #Preview("Harness (live server)") {
-    KaanjuPreviewHarness(baseURL: "http://localhost:8080", apiKey: "sk_live_4A4zgjuXxCiwqkEy16jb2AghGEfuHBH5L")
+    KaanjuPreviewHarness(baseURL: "http://localhost:8080", apiKey: "")
 }
 
 // Static: the checkout screen itself, waiting for payment. No server needed —

@@ -17,9 +17,12 @@ let package = Package(
     ],
     targets: [
         // Zero external dependencies: the QR code is rendered with CoreImage,
-        // networking with URLSession. Nothing to resolve.
+        // networking with URLSession. Nothing to resolve. The bundled asset
+        // catalog carries the brand color sets (light + dark), loaded via
+        // `Bundle.module` in `KaanjuColor`.
         .target(
-            name: "kaanju_swift"
+            name: "kaanju_swift",
+            resources: [.process("Resources/KaanjuColors.xcassets")]
         ),
         .testTarget(
             name: "kaanju_swiftTests",

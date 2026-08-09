@@ -35,7 +35,9 @@ public extension View {
                 onPayWithWallet: onPayWithWallet,
                 onFinish: onFinish
             )
-            .presentationDragIndicator(.visible)
+            // No grabber pill — the screen sets `.hidden` itself; this keeps the
+            // presentation clean (the bare X is the only chrome).
+            .presentationDragIndicator(.hidden)
         }
     }
 }

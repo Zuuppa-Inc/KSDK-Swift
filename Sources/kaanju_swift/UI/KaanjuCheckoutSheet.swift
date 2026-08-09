@@ -19,6 +19,10 @@ struct KaanjuCheckoutScreen: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    /// Measured height of the laid-out content, used to size the sheet to fit its
+    /// content exactly (and re-size as steps change). 0 until the first layout.
+    @State private var contentHeight: CGFloat = 0
+
     /// - Parameters:
     ///   - intent: the intent to pay (from your server's `POST /intents`,
     ///     including its `client_secret`).
@@ -61,9 +65,31 @@ struct KaanjuCheckoutScreen: View {
                         payView
                     }
                 }
-                .padding(24)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+                // Measure the content so the sheet can size itself to fit exactly.
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: ContentHeightKey.self, value: proxy.size.height)
+                    }
+                )
             }
+            // The content grows/shrinks between steps (token-select → pay →
+            // terminal); don't let the ScrollView bounce when it already fits.
+            .scrollBounceBehavior(.basedOnSize)
         }
+        .frame(maxWidth: .infinity)
+        .foregroundStyle(KaanjuColor.textPrimary)
+        .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+        // Start small and expand to the exact height needed. Header (~44) +
+        // measured content; the detent caps at ~92% of the screen via .large so a
+        // very tall step (e.g. the address form) stays scrollable rather than
+        // running off-screen.
+        .presentationDetents(sheetDetents)
+        // No grabber pill — the bare X in the header is the only chrome.
+        .presentationDragIndicator(.hidden)
+        // Paint the whole sheet surface with the brand background.
+        .presentationBackground(KaanjuColor.background)
         .onAppear { model.start() }
         // Dismissal is the single cancel point: whether the buyer taps the X or
         // swipes the sheet away, if the checkout is still resumable we cancel it
@@ -90,26 +116,39 @@ struct KaanjuCheckoutScreen: View {
         onFinish?(result)
     }
 
+    /// Detents driving the sheet's size: a single detent sized to the header plus
+    /// the measured content, so the sheet is exactly as tall as it needs to be and
+    /// re-sizes as the buyer moves between steps. Before the first measurement we
+    /// fall back to `.medium` so the sheet has a sane initial size.
+    private var sheetDetents: Set<PresentationDetent> {
+        guard contentHeight > 0 else { return [.medium] }
+        // headerHeight ≈ X button (32) + top padding (12).
+        let headerHeight: CGFloat = 44
+        return [.height(headerHeight + contentHeight)]
+    }
+
     // MARK: - Header
 
+    // A bare X in the top-right, matching Stripe's PaymentSheet nav bar: no title,
+    // no filled background — just the glyph, tinted like a secondary control.
     private var header: some View {
         HStack {
-            Text("Payment")
-                .font(.headline)
             Spacer()
             Button {
                 // Just dismiss — `.onDisappear` is the single cancel point and
                 // handles the cancel + one-shot finish (same as swipe-to-dismiss).
                 dismiss()
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(KaanjuColor.textSecondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Close")
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     // MARK: - Pay view
@@ -118,10 +157,12 @@ struct KaanjuCheckoutScreen: View {
         VStack(spacing: 20) {
             amountView
 
+            // QR codes need a white quiet zone to scan reliably, so this tile
+            // stays white in both light and dark — it's not a theming surface.
             QRView(string: model.intent.address, size: 220)
                 .padding(16)
                 .background(RoundedRectangle(cornerRadius: 16).fill(.white))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(.quaternary))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(KaanjuColor.border))
 
             addressView
 
@@ -130,7 +171,7 @@ struct KaanjuCheckoutScreen: View {
             if let message = model.status?.message {
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(KaanjuColor.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
@@ -140,15 +181,15 @@ struct KaanjuCheckoutScreen: View {
                 Button(action: { model.payWithWallet() }) {
                     HStack {
                         if model.isPayingWithWallet {
-                            ProgressView().tint(.white)
+                            ProgressView().tint(KaanjuColor.accentText)
                         }
                         Text(model.config.payWithWalletTitle)
                             .fontWeight(.semibold)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color.accentColor)
-                    .foregroundStyle(.white)
+                    .background(KaanjuColor.accent)
+                    .foregroundStyle(KaanjuColor.accentText)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(model.isPayingWithWallet)
@@ -157,7 +198,7 @@ struct KaanjuCheckoutScreen: View {
             if let err = model.errorMessage {
                 Text(err)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(KaanjuColor.danger)
                     .multilineTextAlignment(.center)
             }
         }
@@ -176,20 +217,21 @@ struct KaanjuCheckoutScreen: View {
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                 Text("Choose a token to pay")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(KaanjuColor.textSecondary)
             } else {
                 Text("Any amount")
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(KaanjuColor.textSecondary)
             }
             Text(payAssetSubtitle)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(KaanjuColor.textSecondary)
         }
     }
 
     private var payAssetSubtitle: String {
-        (model.lockedMint ?? model.intent.mint) == nil ? "Solana" : "SPL token"
+        if let name = model.payAssetName { return name }
+        return (model.lockedMint ?? model.intent.mint) == nil ? "Solana" : "SPL token"
     }
 
     /// Format integer USD cents as a "$X.YY" string.
@@ -202,7 +244,7 @@ struct KaanjuCheckoutScreen: View {
         VStack(spacing: 6) {
             Text("Send to this address")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(KaanjuColor.textSecondary)
             Button {
                 UIPasteboard.general.string = model.intent.address
             } label: {
@@ -212,7 +254,7 @@ struct KaanjuCheckoutScreen: View {
                     Image(systemName: "doc.on.doc")
                         .font(.caption2)
                 }
-                .foregroundStyle(.primary)
+                .foregroundStyle(KaanjuColor.textPrimary)
             }
             .accessibilityLabel("Copy address")
         }
@@ -223,7 +265,7 @@ struct KaanjuCheckoutScreen: View {
         if let refunds = model.status?.tokenRefunds, !refunds.isEmpty {
             Text("An unexpected token was received and is being returned to you.")
                 .font(.footnote)
-                .foregroundStyle(.orange)
+                .foregroundStyle(KaanjuColor.warning)
                 .multilineTextAlignment(.center)
         }
     }
@@ -243,14 +285,14 @@ struct KaanjuCheckoutScreen: View {
             if let message = model.status?.message {
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(KaanjuColor.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
             if let s = model.status?.settlement {
                 Text("Received \(KaanjuAmount.format(s.destinationAmount, decimals: s.decimals, symbol: s.asset == "SOL" ? "SOL" : s.asset))")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(KaanjuColor.textSecondary)
             }
 
             Button {
@@ -260,8 +302,8 @@ struct KaanjuCheckoutScreen: View {
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color.accentColor)
-                    .foregroundStyle(.white)
+                    .background(KaanjuColor.accent)
+                    .foregroundStyle(KaanjuColor.accentText)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .padding(.top, 8)
@@ -280,11 +322,11 @@ struct KaanjuCheckoutScreen: View {
 
     private var terminalColor: Color {
         switch model.phase {
-        case .settled: return .green
-        case .refunded: return .blue
-        case .refundFailed: return .red
-        case .cancelled: return .gray
-        default: return .gray
+        case .settled: return KaanjuColor.success
+        case .refunded: return KaanjuColor.accent
+        case .refundFailed: return KaanjuColor.danger
+        case .cancelled: return KaanjuColor.textTertiary
+        default: return KaanjuColor.textTertiary
         }
     }
 
@@ -302,6 +344,14 @@ struct KaanjuCheckoutScreen: View {
     private func truncated(_ s: String, keep: Int = 6) -> String {
         guard s.count > keep * 2 + 1 else { return s }
         return "\(s.prefix(keep))…\(s.suffix(keep))"
+    }
+}
+
+/// Carries the measured content height up so the sheet can size itself to fit.
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 #endif

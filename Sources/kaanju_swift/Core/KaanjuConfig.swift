@@ -22,18 +22,27 @@ public struct KaanjuConfig: Sendable {
     /// goes straight to payment. Set these to add a details step.
     public var fields: KaanjuCheckoutFields
 
+    /// Whether to resolve token names / tickers / logos from a public token
+    /// directory (Jupiter) so pay-in assets show "USD Coin · USDC" instead of a
+    /// raw mint address. On by default; purely cosmetic and best-effort (amounts
+    /// always come from the Kaanju server). Set false to keep the sheet fully
+    /// offline / avoid the third-party lookup.
+    public var resolveTokenNames: Bool
+
     public init(
         apiBaseURL: URL = URL(string: "https://api.kaanju.com")!,
         pollInterval: TimeInterval = 3.0,
         showPayWithWallet: Bool = true,
         payWithWalletTitle: String = "Pay with wallet",
-        fields: KaanjuCheckoutFields = .none
+        fields: KaanjuCheckoutFields = .none,
+        resolveTokenNames: Bool = true
     ) {
         self.apiBaseURL = apiBaseURL
         self.pollInterval = pollInterval
         self.showPayWithWallet = showPayWithWallet
         self.payWithWalletTitle = payWithWalletTitle
         self.fields = fields
+        self.resolveTokenNames = resolveTokenNames
     }
 
     /// Production defaults.

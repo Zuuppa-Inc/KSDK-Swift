@@ -46,7 +46,14 @@ public final class CheckoutModel {
     /// The locked asset's decimals after selection.
     public private(set) var lockedDecimals: Int?
 
+    /// Resolved human metadata (name / ticker / logo) per mint, keyed by the same
+    /// id `KaanjuAcceptedToken.id` uses ("sol" for native SOL). Filled in the
+    /// background from the token directory; the UI reads it to show real names
+    /// instead of raw mint addresses. Empty until lookups return.
+    public private(set) var tokenMeta: [String: KaanjuTokenMeta] = [:]
+
     private let api: KaanjuAPI
+    private let directory: KaanjuTokenDirectory
     private let onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)?
     private var pollTask: Task<Void, Never>?
     private var didFinish = false
@@ -56,11 +63,13 @@ public final class CheckoutModel {
         intent: KaanjuIntent,
         config: KaanjuConfig = .default,
         session: URLSession = .shared,
+        directory: KaanjuTokenDirectory = .shared,
         onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)? = nil
     ) {
         self.intent = intent
         self.config = config
         self.api = KaanjuAPI(config: config, session: session)
+        self.directory = directory
         self.onPayWithWallet = onPayWithWallet
         // Show the details step first only when the integrator configured fields
         // to collect AND we can actually submit them (we need a client_secret).
@@ -77,6 +86,51 @@ public final class CheckoutModel {
     /// already pinned). Sourced from the intent.
     public var acceptedTokens: [KaanjuAcceptedToken] {
         intent.acceptedTokens ?? []
+    }
+
+    // MARK: - Token names / tickers
+
+    /// Look up human name + ticker (+ logo) for every asset the sheet might show —
+    /// each accepted token, plus whatever's already pinned on the intent — so the
+    /// UI can display "USD Coin · USDC" instead of a raw mint. Best-effort and
+    /// cached: failures leave the label falling back to the symbol hint or a short
+    /// mint. Safe to call more than once (only unresolved mints hit the network).
+    public func resolveTokenNames() {
+        guard config.resolveTokenNames else { return }
+        var mints = Set(acceptedTokens.map { $0.mint ?? "sol" })
+        mints.insert((lockedMint ?? intent.mint) ?? "sol")
+        for key in mints where tokenMeta[key] == nil {
+            let mint = key == "sol" ? nil : key
+            Task { [weak self, directory] in
+                guard let meta = await directory.metadata(forMint: mint) else { return }
+                await MainActor.run { self?.tokenMeta[key] = meta }
+            }
+        }
+    }
+
+    /// Resolved metadata for an accepted token, if the lookup has returned.
+    public func meta(for token: KaanjuAcceptedToken) -> KaanjuTokenMeta? {
+        tokenMeta[token.id]
+    }
+
+    /// Inject resolved metadata directly, bypassing the network lookup — for tests
+    /// and previews only.
+    func applyTokenMetaForTesting(_ meta: KaanjuTokenMeta, forKey key: String) {
+        tokenMeta[key] = meta
+    }
+
+    /// The best label for an accepted token row: the resolved name if we have it,
+    /// else the server's symbol hint, else the token's own short-mint fallback.
+    public func displayName(for token: KaanjuAcceptedToken) -> String {
+        tokenMeta[token.id]?.name ?? token.displayLabel
+    }
+
+    /// The ticker line under the name (e.g. "SOL" / "USDC"), or a generic asset
+    /// kind when we can't resolve one.
+    public func ticker(for token: KaanjuAcceptedToken) -> String {
+        if let symbol = tokenMeta[token.id]?.symbol, !symbol.isEmpty { return symbol }
+        if let symbol = token.symbol, !symbol.isEmpty { return symbol }
+        return token.isSOL ? "SOL" : "SPL token"
     }
 
     /// Whether the "Pay with wallet" button should be shown.
@@ -97,6 +151,9 @@ public final class CheckoutModel {
 
     /// Begin polling. Safe to call once when the sheet appears.
     public func start() {
+        // Resolve token names/logos in the background regardless of which step the
+        // sheet opens on (fixed-token intents skip token-select entirely).
+        resolveTokenNames()
         guard pollTask == nil else { return }
         guard let secret = intent.clientSecret else {
             errorMessage = KaanjuError.missingClientSecret.localizedDescription
@@ -354,6 +411,9 @@ public final class CheckoutModel {
             lockedExpectedLamports = locked
             lockedMint = s.mint
             lockedDecimals = s.mint == nil ? 9 : s.mintDecimals
+            // The pinned asset may not have been among the accepted tokens we
+            // already resolved; make sure its name/logo gets looked up too.
+            resolveTokenNames()
         }
     }
 
@@ -364,8 +424,18 @@ public final class CheckoutModel {
     }
 
     /// The asset label to display on the pay view (reflects a locked selection).
+    /// Prefers a resolved ticker, then a truncated mint, then "SOL".
     public var payAssetLabel: String {
-        (lockedMint ?? intent.mint) ?? "SOL"
+        let mint = lockedMint ?? intent.mint
+        if let symbol = tokenMeta[mint ?? "sol"]?.symbol, !symbol.isEmpty { return symbol }
+        guard let mint else { return "SOL" }
+        return mint.count > 12 ? "\(mint.prefix(4))…\(mint.suffix(4))" : mint
+    }
+
+    /// The full asset name for the pay view subtitle (e.g. "USD Coin" / "Solana"),
+    /// once resolved; nil when we only have a ticker/mint.
+    public var payAssetName: String? {
+        tokenMeta[(lockedMint ?? intent.mint) ?? "sol"]?.name
     }
 
     /// The decimals to use when formatting the pay amount (reflects a selection).

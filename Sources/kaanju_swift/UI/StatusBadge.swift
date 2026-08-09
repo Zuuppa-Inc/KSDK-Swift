@@ -34,15 +34,15 @@ struct StatusBadge: View {
 
     private var color: Color {
         switch phase {
-        case .awaitingPayment: return .secondary
-        case .underpaid: return .orange
-        case .settling: return .blue
-        case .settled: return .green
-        case .expired: return .gray
-        case .refunding: return .orange
-        case .refunded: return .blue
-        case .refundFailed: return .red
-        case .cancelled: return .gray
+        case .awaitingPayment: return KaanjuColor.textSecondary
+        case .underpaid: return KaanjuColor.warning
+        case .settling: return KaanjuColor.accent
+        case .settled: return KaanjuColor.success
+        case .expired: return KaanjuColor.textTertiary
+        case .refunding: return KaanjuColor.warning
+        case .refunded: return KaanjuColor.accent
+        case .refundFailed: return KaanjuColor.danger
+        case .cancelled: return KaanjuColor.textTertiary
         }
     }
 }
