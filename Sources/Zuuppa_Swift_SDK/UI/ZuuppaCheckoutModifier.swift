@@ -2,10 +2,10 @@
 import SwiftUI
 
 public extension View {
-    /// Present the Kaanju checkout sheet.
+    /// Present the Zuuppa checkout sheet.
     ///
     /// ```swift
-    /// .kaanjuCheckout(
+    /// .zuuppaCheckout(
     ///     isPresented: $showCheckout,
     ///     intent: intent,
     ///     onPayWithWallet: { intent in try await wallet.pay(to: intent.address) },
@@ -21,15 +21,15 @@ public extension View {
     ///   - onFinish: terminal result callback. The sheet is NOT auto-dismissed on
     ///     finish (the buyer taps "Done"); flip `isPresented` here if you want to
     ///     dismiss on cancellation.
-    func kaanjuCheckout(
+    func zuuppaCheckout(
         isPresented: Binding<Bool>,
-        intent: KaanjuIntent,
-        config: KaanjuConfig = .default,
-        onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)? = nil,
-        onFinish: ((KaanjuCheckoutResult) -> Void)? = nil
+        intent: ZuuppaIntent,
+        config: ZuuppaConfig = .default,
+        onPayWithWallet: (@Sendable (ZuuppaIntent) async throws -> Void)? = nil,
+        onFinish: ((ZuuppaCheckoutResult) -> Void)? = nil
     ) -> some View {
         sheet(isPresented: isPresented) {
-            KaanjuCheckoutScreen(
+            ZuuppaCheckoutScreen(
                 intent: intent,
                 config: config,
                 onPayWithWallet: onPayWithWallet,

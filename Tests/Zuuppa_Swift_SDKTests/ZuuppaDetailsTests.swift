@@ -1,8 +1,8 @@
 import XCTest
-@testable import kaanju_swift
+@testable import Zuuppa_Swift_SDK
 
-final class KaanjuDetailsTests: XCTestCase {
-    private let intent = KaanjuIntent(
+final class ZuuppaDetailsTests: XCTestCase {
+    private let intent = ZuuppaIntent(
         id: "11111111-1111-1111-1111-111111111111",
         address: "So1anaAddrExample1111111111111111111111111",
         clientSecret: "cs_abc123",
@@ -19,7 +19,7 @@ final class KaanjuDetailsTests: XCTestCase {
     /// Any configured field triggers the details step (when a client_secret exists).
     @MainActor
     func testConfiguredFieldsTriggerDetailsStep() {
-        var cfg = KaanjuConfig.default
+        var cfg = ZuuppaConfig.default
         cfg.fields.email = .optional
         let model = CheckoutModel(intent: intent, config: cfg)
         XCTAssertTrue(model.needsDetails)
@@ -29,8 +29,8 @@ final class KaanjuDetailsTests: XCTestCase {
     /// fields are configured (rather than blocking the buyer).
     @MainActor
     func testNoClientSecretSkipsDetailsStep() {
-        let noSecret = KaanjuIntent(id: "x", address: "y", clientSecret: nil)
-        var cfg = KaanjuConfig.default
+        let noSecret = ZuuppaIntent(id: "x", address: "y", clientSecret: nil)
+        var cfg = ZuuppaConfig.default
         cfg.fields.name = .required
         let model = CheckoutModel(intent: noSecret, config: cfg)
         XCTAssertFalse(model.needsDetails)
@@ -39,8 +39,8 @@ final class KaanjuDetailsTests: XCTestCase {
     /// Required fields must be filled; validation reports the first gap.
     @MainActor
     func testValidationRequiresConfiguredFields() {
-        var cfg = KaanjuConfig.default
-        cfg.fields = KaanjuCheckoutFields(name: .required, email: .required, address: .required)
+        var cfg = ZuuppaConfig.default
+        cfg.fields = ZuuppaCheckoutFields(name: .required, email: .required, address: .required)
         let model = CheckoutModel(intent: intent, config: cfg)
 
         XCTAssertNotNil(model.validateDetails()) // empty → invalid
@@ -48,7 +48,7 @@ final class KaanjuDetailsTests: XCTestCase {
         model.details.firstName = "Ada"
         model.details.lastName = "Lovelace"
         model.details.email = "ada@example.com"
-        model.details.address = KaanjuAddress(
+        model.details.address = ZuuppaAddress(
             country: "GB",
             line1: "12 Baker St",
             city: "London",
@@ -60,7 +60,7 @@ final class KaanjuDetailsTests: XCTestCase {
     /// A malformed email is rejected even when the field is only optional.
     @MainActor
     func testInvalidEmailRejected() {
-        var cfg = KaanjuConfig.default
+        var cfg = ZuuppaConfig.default
         cfg.fields.email = .optional
         let model = CheckoutModel(intent: intent, config: cfg)
 
@@ -77,11 +77,11 @@ final class KaanjuDetailsTests: XCTestCase {
     /// An all-optional set is skippable; any required field makes it not.
     @MainActor
     func testSkippability() {
-        var optionalCfg = KaanjuConfig.default
-        optionalCfg.fields = KaanjuCheckoutFields(name: .optional, email: .optional)
+        var optionalCfg = ZuuppaConfig.default
+        optionalCfg.fields = ZuuppaCheckoutFields(name: .optional, email: .optional)
         XCTAssertTrue(CheckoutModel(intent: intent, config: optionalCfg).detailsAreSkippable)
 
-        var requiredCfg = KaanjuConfig.default
+        var requiredCfg = ZuuppaConfig.default
         requiredCfg.fields.email = .required
         XCTAssertFalse(CheckoutModel(intent: intent, config: requiredCfg).detailsAreSkippable)
     }
@@ -89,7 +89,7 @@ final class KaanjuDetailsTests: XCTestCase {
     /// Address encodes with the server's snake_case keys (postal_code) and skips
     /// nil components.
     func testAddressEncoding() throws {
-        let addr = KaanjuAddress(country: "JP", line1: "1-1", city: "Tokyo", postalCode: "100-0001")
+        let addr = ZuuppaAddress(country: "JP", line1: "1-1", city: "Tokyo", postalCode: "100-0001")
         let data = try JSONEncoder().encode(addr)
         let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         XCTAssertEqual(obj["country"] as? String, "JP")
@@ -100,9 +100,9 @@ final class KaanjuDetailsTests: XCTestCase {
 
     /// The country list is populated and lookups are case-insensitive.
     func testCountryLookup() {
-        XCTAssertFalse(KaanjuCountries.all.isEmpty)
-        XCTAssertEqual(KaanjuCountries.country(for: "us")?.code, "US")
-        XCTAssertNil(KaanjuCountries.country(for: "ZZ"))
+        XCTAssertFalse(ZuuppaCountries.all.isEmpty)
+        XCTAssertEqual(ZuuppaCountries.country(for: "us")?.code, "US")
+        XCTAssertNil(ZuuppaCountries.country(for: "ZZ"))
     }
 
     /// Going back to token selection is only offered when it preceded details,
@@ -110,7 +110,7 @@ final class KaanjuDetailsTests: XCTestCase {
     @MainActor
     func testBackToTokenSelectionOnlyWhenItPreceded() {
         // A fixed-token intent has no token-select step → no back affordance.
-        var cfg = KaanjuConfig.default
+        var cfg = ZuuppaConfig.default
         cfg.fields.name = .required
         let noSelection = CheckoutModel(intent: intent, config: cfg)
         XCTAssertFalse(noSelection.canGoBackToTokenSelection)
@@ -118,12 +118,12 @@ final class KaanjuDetailsTests: XCTestCase {
         XCTAssertFalse(noSelection.needsTokenSelection) // no-op
 
         // A USD-priced intent with accepted tokens has token selection first.
-        let usdIntent = KaanjuIntent(
+        let usdIntent = ZuuppaIntent(
             id: "33333333-3333-3333-3333-333333333333",
             address: "So1anaAddrExample1111111111111111111111111",
             clientSecret: "cs_abc123",
             priceUsdCents: 500,
-            acceptedTokens: [KaanjuAcceptedToken(kind: "native", mint: nil, symbol: "SOL")]
+            acceptedTokens: [ZuuppaAcceptedToken(kind: "native", mint: nil, symbol: "SOL")]
         )
         let model = CheckoutModel(intent: usdIntent, config: cfg)
         XCTAssertTrue(model.needsTokenSelection)
@@ -144,7 +144,7 @@ final class KaanjuDetailsTests: XCTestCase {
         XCTAssertFalse(bare.canGoBackFromPay)
 
         // Details configured → pay can go back to details.
-        var cfg = KaanjuConfig.default
+        var cfg = ZuuppaConfig.default
         cfg.fields.email = .required
         let withDetails = CheckoutModel(intent: intent, config: cfg)
         withDetails.skipDetails() // advance past details to pay
@@ -155,12 +155,12 @@ final class KaanjuDetailsTests: XCTestCase {
 
         // USD-priced intent with no fields: token selection preceded pay, so the
         // back affordance is available (the header pairs it with the pay step).
-        let usdIntent = KaanjuIntent(
+        let usdIntent = ZuuppaIntent(
             id: "44444444-4444-4444-4444-444444444444",
             address: "So1anaAddrExample1111111111111111111111111",
             clientSecret: "cs_abc123",
             priceUsdCents: 500,
-            acceptedTokens: [KaanjuAcceptedToken(kind: "native", mint: nil, symbol: "SOL")]
+            acceptedTokens: [ZuuppaAcceptedToken(kind: "native", mint: nil, symbol: "SOL")]
         )
         let usd = CheckoutModel(intent: usdIntent, config: .default)
         XCTAssertTrue(usd.needsTokenSelection)
@@ -206,29 +206,29 @@ final class KaanjuDetailsTests: XCTestCase {
 
     /// The format adapts field presence and labels per country.
     func testAddressFormatAdaptsPerCountry() {
-        let us = KaanjuAddressFormat.resolve(for: "US")
+        let us = ZuuppaAddressFormat.resolve(for: "US")
         XCTAssertTrue(us.showState)
         XCTAssertTrue(us.stateRequired)
         XCTAssertEqual(us.stateLabel, "State")
         XCTAssertEqual(us.postalLabel, "ZIP code")
 
-        let gb = KaanjuAddressFormat.resolve(for: "gb") // case-insensitive
+        let gb = ZuuppaAddressFormat.resolve(for: "gb") // case-insensitive
         XCTAssertFalse(gb.showState)
         XCTAssertTrue(gb.showPostal)
         XCTAssertEqual(gb.postalLabel, "Postcode")
 
-        let jp = KaanjuAddressFormat.resolve(for: "JP")
+        let jp = ZuuppaAddressFormat.resolve(for: "JP")
         XCTAssertEqual(jp.stateLabel, "Prefecture")
 
-        let ie = KaanjuAddressFormat.resolve(for: "IE")
+        let ie = ZuuppaAddressFormat.resolve(for: "IE")
         XCTAssertEqual(ie.postalLabel, "Eircode")
 
         // Hong Kong has no postal-code system.
-        let hk = KaanjuAddressFormat.resolve(for: "HK")
+        let hk = ZuuppaAddressFormat.resolve(for: "HK")
         XCTAssertFalse(hk.showPostal)
 
         // Unknown / nil falls back to the default (city + postal, no state).
-        let def = KaanjuAddressFormat.resolve(for: nil)
+        let def = ZuuppaAddressFormat.resolve(for: nil)
         XCTAssertFalse(def.showState)
         XCTAssertTrue(def.showPostal)
         XCTAssertEqual(def.cityLabel, "City")
@@ -239,12 +239,12 @@ final class KaanjuDetailsTests: XCTestCase {
     /// a no-postal country (HK) is valid without a postal code.
     @MainActor
     func testValidationFollowsCountryFormat() {
-        var cfg = KaanjuConfig.default
+        var cfg = ZuuppaConfig.default
         cfg.fields.address = .required
         let model = CheckoutModel(intent: intent, config: cfg)
 
         // US without a state is invalid...
-        model.details.address = KaanjuAddress(
+        model.details.address = ZuuppaAddress(
             country: "US", line1: "1 Infinite Loop", city: "Cupertino", postalCode: "95014"
         )
         XCTAssertNotNil(model.validateDetails())
@@ -253,7 +253,7 @@ final class KaanjuDetailsTests: XCTestCase {
         XCTAssertNil(model.validateDetails())
 
         // Hong Kong: no postal code needed, no state.
-        model.details.address = KaanjuAddress(
+        model.details.address = ZuuppaAddress(
             country: "HK", line1: "8 Finance St", city: "Central"
         )
         XCTAssertNil(model.validateDetails())

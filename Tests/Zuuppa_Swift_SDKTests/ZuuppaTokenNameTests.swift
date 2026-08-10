@@ -1,8 +1,8 @@
 import XCTest
-@testable import kaanju_swift
+@testable import Zuuppa_Swift_SDK
 
-final class KaanjuTokenNameTests: XCTestCase {
-    private let usdUnlocked = KaanjuIntent(
+final class ZuuppaTokenNameTests: XCTestCase {
+    private let usdUnlocked = ZuuppaIntent(
         id: "33333333-3333-3333-3333-333333333333",
         address: "So1anaAddrExample1111111111111111111111111",
         clientSecret: "cs_abc123",
@@ -11,10 +11,10 @@ final class KaanjuTokenNameTests: XCTestCase {
         mode: "custom",
         priceUsdCents: 1250,
         acceptedTokens: [
-            KaanjuAcceptedToken(kind: "sol"),
-            KaanjuAcceptedToken(kind: "spl", mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6, symbol: "USDC"),
+            ZuuppaAcceptedToken(kind: "sol"),
+            ZuuppaAcceptedToken(kind: "spl", mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6, symbol: "USDC"),
             // An SPL token with no symbol hint — should fall back to a short mint.
-            KaanjuAcceptedToken(kind: "spl", mint: "MintWithNoSymbolHint000000000000000000000000", decimals: 6),
+            ZuuppaAcceptedToken(kind: "spl", mint: "MintWithNoSymbolHint000000000000000000000000", decimals: 6),
         ]
     )
 
@@ -45,7 +45,7 @@ final class KaanjuTokenNameTests: XCTestCase {
         let usdc = model.acceptedTokens[1]
 
         model.applyTokenMetaForTesting(
-            KaanjuTokenMeta(mint: usdc.mint!, name: "USD Coin", symbol: "USDC"),
+            ZuuppaTokenMeta(mint: usdc.mint!, name: "USD Coin", symbol: "USDC"),
             forKey: usdc.id
         )
         XCTAssertEqual(model.displayName(for: usdc), "USD Coin")
@@ -64,7 +64,7 @@ final class KaanjuTokenNameTests: XCTestCase {
         """.data(using: .utf8)!
 
         let session = StubProtocol.session(returning: body)
-        let directory = KaanjuTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
+        let directory = ZuuppaTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
         let meta = await directory.metadata(forMint: mint)
 
         XCTAssertEqual(meta?.name, "USD Coin")
@@ -75,7 +75,7 @@ final class KaanjuTokenNameTests: XCTestCase {
     /// A malformed / empty directory response resolves to nil (soft failure).
     func testDirectoryFailsSoftOnGarbage() async {
         let session = StubProtocol.session(returning: Data("not json".utf8))
-        let directory = KaanjuTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
+        let directory = ZuuppaTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
         let meta = await directory.metadata(forMint: "AnyMint")
         XCTAssertNil(meta)
     }
@@ -87,7 +87,7 @@ final class KaanjuTokenNameTests: XCTestCase {
         [{"id":"\(mint)","name":"Jelly","symbol":"JELLY","icon":"ipfs://QmABC123/logo.png"}]
         """.data(using: .utf8)!
         let session = StubProtocol.session(returning: body)
-        let directory = KaanjuTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
+        let directory = ZuuppaTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
         let meta = await directory.metadata(forMint: mint)
         XCTAssertEqual(meta?.iconURL, URL(string: "https://dweb.link/ipfs/QmABC123/logo.png"))
     }
@@ -99,7 +99,7 @@ final class KaanjuTokenNameTests: XCTestCase {
         [{"id":"\(mint)","name":"Jelly","symbol":"JELLY","icon":"https://ipfs.io/ipfs/QmWT4jA2/logo.png"}]
         """.data(using: .utf8)!
         let session = StubProtocol.session(returning: body)
-        let directory = KaanjuTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
+        let directory = ZuuppaTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
         let meta = await directory.metadata(forMint: mint)
         XCTAssertEqual(meta?.iconURL, URL(string: "https://dweb.link/ipfs/QmWT4jA2/logo.png"))
     }
@@ -112,7 +112,7 @@ final class KaanjuTokenNameTests: XCTestCase {
         [{"id":"\(mint)","name":"Coin","symbol":"COIN","icon":"\(url)"}]
         """.data(using: .utf8)!
         let session = StubProtocol.session(returning: body)
-        let directory = KaanjuTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
+        let directory = ZuuppaTokenDirectory(session: session, baseURL: URL(string: "https://stub.local")!)
         let meta = await directory.metadata(forMint: mint)
         XCTAssertEqual(meta?.iconURL, URL(string: url))
     }

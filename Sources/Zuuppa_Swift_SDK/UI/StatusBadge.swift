@@ -4,7 +4,7 @@ import SwiftUI
 /// A small pill showing the current checkout phase with a status-appropriate
 /// color and label.
 struct StatusBadge: View {
-    let phase: KaanjuPhase
+    let phase: ZuuppaPhase
 
     var body: some View {
         HStack(spacing: 6) {
@@ -34,15 +34,15 @@ struct StatusBadge: View {
 
     private var color: Color {
         switch phase {
-        case .awaitingPayment: return KaanjuColor.textSecondary
-        case .underpaid: return KaanjuColor.warning
-        case .settling: return KaanjuColor.accent
-        case .settled: return KaanjuColor.success
-        case .expired: return KaanjuColor.textTertiary
-        case .refunding: return KaanjuColor.warning
-        case .refunded: return KaanjuColor.accent
-        case .refundFailed: return KaanjuColor.danger
-        case .cancelled: return KaanjuColor.textTertiary
+        case .awaitingPayment: return ZuuppaColor.textSecondary
+        case .underpaid: return ZuuppaColor.warning
+        case .settling: return ZuuppaColor.accent
+        case .settled: return ZuuppaColor.success
+        case .expired: return ZuuppaColor.textTertiary
+        case .refunding: return ZuuppaColor.warning
+        case .refunded: return ZuuppaColor.accent
+        case .refundFailed: return ZuuppaColor.danger
+        case .cancelled: return ZuuppaColor.textTertiary
         }
     }
 }

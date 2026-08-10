@@ -8,7 +8,7 @@ import Foundation
 /// an app. This exists purely so you can exercise the full create → QR → poll →
 /// settle flow against a local server from a SwiftUI preview / harness, without
 /// standing up a backend. It is compiled out of release builds by `#if DEBUG`.
-public struct KaanjuDebugClient {
+public struct ZuuppaDebugClient {
     let baseURL: URL
     /// Secret API key (`sk_live_…` / `sk_test_…`).
     let apiKey: String
@@ -37,7 +37,7 @@ public struct KaanjuDebugClient {
         amountUsdCents: Int64? = nil,
         acceptedTokens: [[String: Any]]? = nil,
         cart: [[String: Any]]? = nil
-    ) async throws -> KaanjuIntent {
+    ) async throws -> ZuuppaIntent {
         var body: [String: Any] = [:]
         if let mode, !mode.isEmpty { body["mode"] = mode }
         if let expectedLamports { body["expected_lamports"] = expectedLamports }
@@ -59,19 +59,19 @@ public struct KaanjuDebugClient {
         do {
             (data, response) = try await session.data(for: req)
         } catch {
-            throw KaanjuError.transport(error.localizedDescription)
+            throw ZuuppaError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else {
-            throw KaanjuError.transport("no HTTP response")
+            throw ZuuppaError.transport("no HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
             let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
-            throw KaanjuError.server(status: http.statusCode, message: msg)
+            throw ZuuppaError.server(status: http.statusCode, message: msg)
         }
         do {
-            return try JSONDecoder().decode(KaanjuIntent.self, from: data)
+            return try JSONDecoder().decode(ZuuppaIntent.self, from: data)
         } catch {
-            throw KaanjuError.transport("could not decode intent: \(error)")
+            throw ZuuppaError.transport("could not decode intent: \(error)")
         }
     }
 }

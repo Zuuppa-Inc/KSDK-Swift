@@ -2,7 +2,7 @@ import Foundation
 
 /// Formatting helpers for base-unit amounts (lamports / token base units) in an
 /// intent's asset. Kept dependency-free and locale-friendly.
-public enum KaanjuAmount {
+public enum ZuuppaAmount {
     /// Decimal-adjusted value of `baseUnits` for a given decimals count.
     public static func ui(_ baseUnits: Int64, decimals: Int) -> Double {
         Double(baseUnits) / pow(10.0, Double(decimals))
@@ -26,7 +26,7 @@ public enum KaanjuAmount {
     }
 
     /// Convenience for an intent: format an amount in the intent's own asset.
-    public static func format(_ baseUnits: Int64, for intent: KaanjuIntent) -> String {
+    public static func format(_ baseUnits: Int64, for intent: ZuuppaIntent) -> String {
         format(baseUnits, decimals: intent.decimals, symbol: intent.assetLabel)
     }
 }

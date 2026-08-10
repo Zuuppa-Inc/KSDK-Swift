@@ -4,7 +4,7 @@ import Foundation
 /// server's `accepted_tokens` array element: either native SOL (`kind == "sol"`)
 /// or an SPL token (`kind == "spl"`) pinned by mint. Decimals/symbol are captured
 /// authoritatively by the server; the SDK only displays them.
-public struct KaanjuAcceptedToken: Codable, Identifiable, Sendable, Equatable {
+public struct ZuuppaAcceptedToken: Codable, Identifiable, Sendable, Equatable {
     /// "sol" or "spl".
     public let kind: String
     /// SPL mint address (nil for SOL).
@@ -40,7 +40,7 @@ public struct KaanjuAcceptedToken: Codable, Identifiable, Sendable, Equatable {
 /// Present on order intents everywhere the intent is exposed (create response,
 /// `/status`, and outbound webhooks); absent for custom intents. Prices are the
 /// values charged at checkout, so they're stable even if the catalog changes.
-public struct KaanjuLineItem: Codable, Identifiable, Sendable, Equatable {
+public struct ZuuppaLineItem: Codable, Identifiable, Sendable, Equatable {
     /// Current catalog item id, or nil if the item was deleted after the order.
     public let itemId: String?
     /// Display name charged at checkout.
@@ -70,7 +70,7 @@ public struct KaanjuLineItem: Codable, Identifiable, Sendable, Equatable {
     public var lineTotalUsdCents: Int64 { unitPriceUsdCents * Int64(quantity) }
 }
 
-/// A payment intent, as returned by the Kaanju API. This is what your server
+/// A payment intent, as returned by the Zuuppa API. This is what your server
 /// gets back from `POST /intents` and passes down to the app to hand to the SDK.
 ///
 /// The critical field for the SDK is `clientSecret` — the one-time `cs_…` token
@@ -79,7 +79,7 @@ public struct KaanjuLineItem: Codable, Identifiable, Sendable, Equatable {
 ///
 /// All amounts are in the asset's base units: lamports for SOL, token base
 /// units for an SPL `mint`.
-public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
+public struct ZuuppaIntent: Codable, Identifiable, Sendable, Equatable {
     /// Globally-unique intent id.
     public let id: String
     /// Deposit address the buyer sends funds to (the QR payload).
@@ -107,10 +107,10 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
     /// fixed-token amount). When set, the buyer selects a token to lock the amount.
     public let priceUsdCents: Int64?
     /// Pay-in tokens the buyer may choose among (nil once the asset is pinned).
-    public let acceptedTokens: [KaanjuAcceptedToken]?
+    public let acceptedTokens: [ZuuppaAcceptedToken]?
     /// Cart snapshot for order-mode intents (empty for custom). Same items the
     /// dashboard and outbound webhooks see.
-    public let lineItems: [KaanjuLineItem]
+    public let lineItems: [ZuuppaLineItem]
 
     enum CodingKeys: String, CodingKey {
         case id, address, mint, reference, status, mode
@@ -135,8 +135,8 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
         reference: String? = nil,
         mode: String? = nil,
         priceUsdCents: Int64? = nil,
-        acceptedTokens: [KaanjuAcceptedToken]? = nil,
-        lineItems: [KaanjuLineItem] = []
+        acceptedTokens: [ZuuppaAcceptedToken]? = nil,
+        lineItems: [ZuuppaLineItem] = []
     ) {
         self.id = id
         self.address = address
@@ -168,8 +168,8 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
         reference = try c.decodeIfPresent(String.self, forKey: .reference)
         mode = try c.decodeIfPresent(String.self, forKey: .mode)
         priceUsdCents = try c.decodeIfPresent(Int64.self, forKey: .priceUsdCents)
-        acceptedTokens = try c.decodeIfPresent([KaanjuAcceptedToken].self, forKey: .acceptedTokens)
-        lineItems = try c.decodeIfPresent([KaanjuLineItem].self, forKey: .lineItems) ?? []
+        acceptedTokens = try c.decodeIfPresent([ZuuppaAcceptedToken].self, forKey: .acceptedTokens)
+        lineItems = try c.decodeIfPresent([ZuuppaLineItem].self, forKey: .lineItems) ?? []
     }
 
     // Encoding mirrors the wire shape: omit `line_items` when empty (matches the
@@ -212,7 +212,7 @@ public struct KaanjuIntent: Codable, Identifiable, Sendable, Equatable {
 
 /// A wrong-token refund entry, surfaced alongside the SOL status when the buyer
 /// sent an unexpected token (it's returned automatically on an independent track).
-public struct KaanjuTokenRefund: Codable, Sendable, Equatable {
+public struct ZuuppaTokenRefund: Codable, Sendable, Equatable {
     public let mint: String
     /// pending | settling | refunded | failed
     public let status: String
@@ -220,7 +220,7 @@ public struct KaanjuTokenRefund: Codable, Sendable, Equatable {
 
 /// The exact on-chain amounts delivered once the intent settled (swept). Present
 /// only after settlement — the source of truth for "what was collected".
-public struct KaanjuSettlement: Codable, Sendable, Equatable {
+public struct ZuuppaSettlement: Codable, Sendable, Equatable {
     /// "SOL" or the SPL mint address.
     public let asset: String
     public let decimals: Int
@@ -246,7 +246,7 @@ public struct KaanjuSettlement: Codable, Sendable, Equatable {
 /// The full status response the SDK polls. Flattens the intent plus a
 /// human-readable message, a machine `action`, and (once settled) the
 /// settlement breakdown.
-public struct KaanjuStatus: Codable, Sendable, Equatable {
+public struct ZuuppaStatus: Codable, Sendable, Equatable {
     // Flattened intent fields (same keys as the create response).
     public let id: String
     public let address: String
@@ -265,18 +265,18 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
     /// For underpayment: how many more base units are needed.
     public let shortfallLamports: Int64?
     /// Wrong-token refunds for this address (empty when none).
-    public let tokenRefunds: [KaanjuTokenRefund]
+    public let tokenRefunds: [ZuuppaTokenRefund]
     /// Actual settled amounts once swept (nil until then).
-    public let settlement: KaanjuSettlement?
+    public let settlement: ZuuppaSettlement?
     /// Pricing mode: "custom" or "order" (absent on legacy responses).
     public let mode: String?
     /// USD price in integer cents for a USD-denominated intent (nil for fixed).
     public let priceUsdCents: Int64?
     /// Pay-in tokens the buyer may choose among (nil once the asset is pinned).
-    public let acceptedTokens: [KaanjuAcceptedToken]?
+    public let acceptedTokens: [ZuuppaAcceptedToken]?
     /// Cart snapshot for order-mode intents (empty for custom). Same items the
     /// dashboard and outbound webhooks see.
-    public let lineItems: [KaanjuLineItem]
+    public let lineItems: [ZuuppaLineItem]
 
     enum CodingKeys: String, CodingKey {
         case id, address, mint, status, reference, action, message, settlement, mode
@@ -304,13 +304,13 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
         message = try c.decode(String.self, forKey: .message)
         shortfallLamports = try c.decodeIfPresent(Int64.self, forKey: .shortfallLamports)
         // `token_refunds` is omitted entirely when empty (serde skip), so default.
-        tokenRefunds = try c.decodeIfPresent([KaanjuTokenRefund].self, forKey: .tokenRefunds) ?? []
-        settlement = try c.decodeIfPresent(KaanjuSettlement.self, forKey: .settlement)
+        tokenRefunds = try c.decodeIfPresent([ZuuppaTokenRefund].self, forKey: .tokenRefunds) ?? []
+        settlement = try c.decodeIfPresent(ZuuppaSettlement.self, forKey: .settlement)
         mode = try c.decodeIfPresent(String.self, forKey: .mode)
         priceUsdCents = try c.decodeIfPresent(Int64.self, forKey: .priceUsdCents)
-        acceptedTokens = try c.decodeIfPresent([KaanjuAcceptedToken].self, forKey: .acceptedTokens)
+        acceptedTokens = try c.decodeIfPresent([ZuuppaAcceptedToken].self, forKey: .acceptedTokens)
         // `line_items` is omitted for custom intents (serde skip), so default.
-        lineItems = try c.decodeIfPresent([KaanjuLineItem].self, forKey: .lineItems) ?? []
+        lineItems = try c.decodeIfPresent([ZuuppaLineItem].self, forKey: .lineItems) ?? []
     }
 
     // Encoding is only needed for tests/round-trips; not used by the SDK at runtime.
@@ -350,7 +350,7 @@ public struct KaanjuStatus: Codable, Sendable, Equatable {
 
 /// A single per-token amount for a USD-priced intent, as returned by the quote
 /// endpoint — what one accepted token would cost right now.
-public struct KaanjuQuoteLine: Codable, Identifiable, Sendable, Equatable {
+public struct ZuuppaQuoteLine: Codable, Identifiable, Sendable, Equatable {
     /// SPL mint (nil for native SOL).
     public let mint: String?
     /// Display symbol (e.g. "SOL", "USDC").
@@ -379,10 +379,10 @@ public struct KaanjuQuoteLine: Codable, Identifiable, Sendable, Equatable {
 /// The quote response: per-token preview amounts for a USD-priced intent, plus
 /// the USD price and how long the quote is considered fresh. Purely a preview —
 /// selecting a token (not quoting) is what locks the amount.
-public struct KaanjuQuote: Codable, Sendable, Equatable {
+public struct ZuuppaQuote: Codable, Sendable, Equatable {
     public let priceUsdCents: Int64
     public let expiresInSeconds: Int
-    public let quotes: [KaanjuQuoteLine]
+    public let quotes: [ZuuppaQuoteLine]
 
     enum CodingKeys: String, CodingKey {
         case quotes
@@ -390,7 +390,7 @@ public struct KaanjuQuote: Codable, Sendable, Equatable {
         case expiresInSeconds = "expires_in_seconds"
     }
 
-    public init(priceUsdCents: Int64, expiresInSeconds: Int, quotes: [KaanjuQuoteLine]) {
+    public init(priceUsdCents: Int64, expiresInSeconds: Int, quotes: [ZuuppaQuoteLine]) {
         self.priceUsdCents = priceUsdCents
         self.expiresInSeconds = expiresInSeconds
         self.quotes = quotes
@@ -399,7 +399,7 @@ public struct KaanjuQuote: Codable, Sendable, Equatable {
 
 /// A high-level phase for the checkout UI, derived from the server's `action`.
 /// Keeps the view logic simple and stable even as server strings evolve.
-public enum KaanjuPhase: Sendable, Equatable {
+public enum ZuuppaPhase: Sendable, Equatable {
     /// Waiting for the buyer to pay (nothing / not enough received yet).
     case awaitingPayment
     /// Underpaid — needs `shortfall` more base units.
@@ -429,7 +429,7 @@ public enum KaanjuPhase: Sendable, Equatable {
     }
 
     /// Map a server `action` string (with optional shortfall) to a phase.
-    public static func from(action: String, shortfall: Int64?) -> KaanjuPhase {
+    public static func from(action: String, shortfall: Int64?) -> ZuuppaPhase {
         switch action {
         case "waiting": return .awaitingPayment
         case "underpaid": return .underpaid(shortfall: shortfall)
@@ -446,9 +446,9 @@ public enum KaanjuPhase: Sendable, Equatable {
 }
 
 /// The outcome handed to `onFinish` when the sheet closes.
-public enum KaanjuCheckoutResult: Sendable, Equatable {
+public enum ZuuppaCheckoutResult: Sendable, Equatable {
     /// Payment completed and settled. Carries the final settlement if available.
-    case settled(KaanjuSettlement?)
+    case settled(ZuuppaSettlement?)
     /// The intent expired before payment completed.
     case expired
     /// Funds were returned to the buyer.

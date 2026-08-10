@@ -10,7 +10,7 @@ import Foundation
 /// captures the common variations — state presence + label, postal presence +
 /// label, and the city label — and falls back to a sensible default ("City",
 /// no state, "Postal code") for everything else.
-struct KaanjuAddressFormat: Sendable {
+struct ZuuppaAddressFormat: Sendable {
     /// Label for the locality field (e.g. "City", "Town / City", "Suburb").
     var cityLabel: String
     /// Whether the buyer enters a state/province/region.
@@ -26,7 +26,7 @@ struct KaanjuAddressFormat: Sendable {
 
     /// The generic default: city + postal code, no state. Used for any country
     /// not in the tables below.
-    static let `default` = KaanjuAddressFormat(
+    static let `default` = ZuuppaAddressFormat(
         cityLabel: "City",
         showState: false,
         stateLabel: "State",
@@ -37,10 +37,10 @@ struct KaanjuAddressFormat: Sendable {
 
     /// Resolve the format for an ISO alpha-2 country code (case-insensitive).
     /// nil / unknown ⇒ the default format.
-    static func resolve(for country: String?) -> KaanjuAddressFormat {
+    static func resolve(for country: String?) -> ZuuppaAddressFormat {
         guard let code = country?.trimmed.uppercased(), code.count == 2 else { return .default }
 
-        var fmt = KaanjuAddressFormat.default
+        var fmt = ZuuppaAddressFormat.default
 
         // City label overrides.
         switch code {

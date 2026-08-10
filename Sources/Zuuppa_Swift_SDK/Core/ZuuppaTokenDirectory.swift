@@ -4,7 +4,7 @@ import Foundation
 /// from a mint. The server only hands the SDK a mint (and sometimes a symbol hint),
 /// so the sheet looks the rest up to show "USD Coin · USDC" instead of a raw
 /// `EPjF…Dt1v` address, the way Stripe shows "Visa" rather than a card token.
-public struct KaanjuTokenMeta: Sendable, Equatable {
+public struct ZuuppaTokenMeta: Sendable, Equatable {
     /// The mint this describes (the wrapped-SOL mint for native SOL).
     public let mint: String
     /// Full name, e.g. "USD Coin" / "Solana".
@@ -24,13 +24,13 @@ public struct KaanjuTokenMeta: Sendable, Equatable {
 
 /// Resolves token name / ticker / logo from a mint via Jupiter's public,
 /// key-less token search (`lite-api.jup.ag/tokens/v2/search`). Purely cosmetic —
-/// amounts and decimals always come from the Kaanju server; this only prettifies
+/// amounts and decimals always come from the Zuuppa server; this only prettifies
 /// the label. Results are cached in-process for the app's lifetime (token
 /// metadata is effectively immutable), and every lookup fails soft: on any error
 /// the caller falls back to the symbol hint or a truncated mint.
-public actor KaanjuTokenDirectory {
+public actor ZuuppaTokenDirectory {
     /// Shared instance so lookups are cached across checkout sheets.
-    public static let shared = KaanjuTokenDirectory()
+    public static let shared = ZuuppaTokenDirectory()
 
     /// The canonical wrapped-SOL mint, used to look up native SOL (`mint == nil`).
     public static let wrappedSOLMint = "So11111111111111111111111111111111111111112"
@@ -39,9 +39,9 @@ public actor KaanjuTokenDirectory {
     private let baseURL: URL
     /// Mint → resolved metadata. `nil` value marks a mint we tried and couldn't
     /// resolve, so we don't hammer the network on every re-render.
-    private var cache: [String: KaanjuTokenMeta?] = [:]
+    private var cache: [String: ZuuppaTokenMeta?] = [:]
     /// In-flight lookups, so concurrent callers for the same mint share one request.
-    private var inFlight: [String: Task<KaanjuTokenMeta?, Never>] = [:]
+    private var inFlight: [String: Task<ZuuppaTokenMeta?, Never>] = [:]
 
     public init(
         session: URLSession = .shared,
@@ -53,13 +53,13 @@ public actor KaanjuTokenDirectory {
 
     /// Resolve metadata for a token. `mint == nil` means native SOL (looked up via
     /// the wrapped-SOL mint). Returns nil if the directory can't resolve it.
-    public func metadata(forMint mint: String?) async -> KaanjuTokenMeta? {
+    public func metadata(forMint mint: String?) async -> ZuuppaTokenMeta? {
         let key = mint ?? Self.wrappedSOLMint
 
         if let cached = cache[key] { return cached }
         if let task = inFlight[key] { return await task.value }
 
-        let task = Task<KaanjuTokenMeta?, Never> { [session, baseURL] in
+        let task = Task<ZuuppaTokenMeta?, Never> { [session, baseURL] in
             await Self.fetch(mint: key, session: session, baseURL: baseURL)
         }
         inFlight[key] = task
@@ -71,7 +71,7 @@ public actor KaanjuTokenDirectory {
 
     /// One key-less GET against the token search endpoint. Best-effort: any
     /// transport/decoding failure resolves to nil.
-    private static func fetch(mint: String, session: URLSession, baseURL: URL) async -> KaanjuTokenMeta? {
+    private static func fetch(mint: String, session: URLSession, baseURL: URL) async -> ZuuppaTokenMeta? {
         var comps = URLComponents(
             url: baseURL.appendingPathComponent("tokens/v2/search"),
             resolvingAgainstBaseURL: false
@@ -95,7 +95,7 @@ public actor KaanjuTokenDirectory {
         let name = hit.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let symbol = hit.symbol.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty || !symbol.isEmpty else { return nil }
-        return KaanjuTokenMeta(
+        return ZuuppaTokenMeta(
             mint: mint,
             name: name.isEmpty ? symbol : name,
             symbol: symbol.isEmpty ? name : symbol,

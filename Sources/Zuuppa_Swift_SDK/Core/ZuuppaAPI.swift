@@ -1,7 +1,7 @@
 import Foundation
 
 /// Errors surfaced by the SDK's networking.
-public enum KaanjuError: Error, LocalizedError, Sendable {
+public enum ZuuppaError: Error, LocalizedError, Sendable {
     /// The intent has no `client_secret`, so its status can't be polled. Make
     /// sure your server forwards the `client_secret` from `POST /intents`.
     case missingClientSecret
@@ -25,19 +25,19 @@ public enum KaanjuError: Error, LocalizedError, Sendable {
 /// Thin client for the one public endpoint the SDK needs: read-only status
 /// polling by `client_secret`. It never holds or transmits the account secret
 /// key — only the per-intent `cs_…` token.
-public struct KaanjuAPI: Sendable {
+public struct ZuuppaAPI: Sendable {
     let baseURL: URL
     let session: URLSession
 
-    public init(config: KaanjuConfig, session: URLSession = .shared) {
+    public init(config: ZuuppaConfig, session: URLSession = .shared) {
         self.baseURL = config.apiBaseURL
         self.session = session
     }
 
     /// GET /intents/status?client_secret=cs_… — the current status of a single
     /// intent. Public and unauthenticated (the secret scopes it to one intent).
-    public func status(clientSecret: String) async throws -> KaanjuStatus {
-        guard clientSecret.hasPrefix("cs_") else { throw KaanjuError.missingClientSecret }
+    public func status(clientSecret: String) async throws -> ZuuppaStatus {
+        guard clientSecret.hasPrefix("cs_") else { throw ZuuppaError.missingClientSecret }
 
         var comps = URLComponents(
             url: baseURL.appendingPathComponent("intents/status"),
@@ -45,7 +45,7 @@ public struct KaanjuAPI: Sendable {
         )!
         comps.queryItems = [URLQueryItem(name: "client_secret", value: clientSecret)]
         guard let url = comps.url else {
-            throw KaanjuError.transport("could not build status URL")
+            throw ZuuppaError.transport("could not build status URL")
         }
 
         var req = URLRequest(url: url)
@@ -57,20 +57,20 @@ public struct KaanjuAPI: Sendable {
         do {
             (data, response) = try await session.data(for: req)
         } catch {
-            throw KaanjuError.transport(error.localizedDescription)
+            throw ZuuppaError.transport(error.localizedDescription)
         }
 
         guard let http = response as? HTTPURLResponse else {
-            throw KaanjuError.transport("no HTTP response")
+            throw ZuuppaError.transport("no HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw KaanjuError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+            throw ZuuppaError.server(status: http.statusCode, message: Self.errorMessage(from: data))
         }
 
         do {
-            return try JSONDecoder().decode(KaanjuStatus.self, from: data)
+            return try JSONDecoder().decode(ZuuppaStatus.self, from: data)
         } catch {
-            throw KaanjuError.transport("could not decode status: \(error)")
+            throw ZuuppaError.transport("could not decode status: \(error)")
         }
     }
 
@@ -80,9 +80,9 @@ public struct KaanjuAPI: Sendable {
     /// reason as `status`: the secret scopes the write to this one intent.
     public func submitDetails(
         clientSecret: String,
-        details: KaanjuCustomerDetails
-    ) async throws -> KaanjuStatus {
-        guard clientSecret.hasPrefix("cs_") else { throw KaanjuError.missingClientSecret }
+        details: ZuuppaCustomerDetails
+    ) async throws -> ZuuppaStatus {
+        guard clientSecret.hasPrefix("cs_") else { throw ZuuppaError.missingClientSecret }
 
         // Body mirrors the server's SubmitDetailsReq: flat name/email + nested
         // address, plus the client_secret. Encoded via the Codable models so the
@@ -92,7 +92,7 @@ public struct KaanjuAPI: Sendable {
             let firstName: String?
             let lastName: String?
             let email: String?
-            let address: KaanjuAddress?
+            let address: ZuuppaAddress?
             enum CodingKeys: String, CodingKey {
                 case email, address
                 case clientSecret = "client_secret"
@@ -115,7 +115,7 @@ public struct KaanjuAPI: Sendable {
         do {
             req.httpBody = try JSONEncoder().encode(body)
         } catch {
-            throw KaanjuError.transport("could not encode details: \(error)")
+            throw ZuuppaError.transport("could not encode details: \(error)")
         }
 
         let data: Data
@@ -123,18 +123,18 @@ public struct KaanjuAPI: Sendable {
         do {
             (data, response) = try await session.data(for: req)
         } catch {
-            throw KaanjuError.transport(error.localizedDescription)
+            throw ZuuppaError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else {
-            throw KaanjuError.transport("no HTTP response")
+            throw ZuuppaError.transport("no HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw KaanjuError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+            throw ZuuppaError.server(status: http.statusCode, message: Self.errorMessage(from: data))
         }
         do {
-            return try JSONDecoder().decode(KaanjuStatus.self, from: data)
+            return try JSONDecoder().decode(ZuuppaStatus.self, from: data)
         } catch {
-            throw KaanjuError.transport("could not decode status: \(error)")
+            throw ZuuppaError.transport("could not decode status: \(error)")
         }
     }
 
@@ -147,8 +147,8 @@ public struct KaanjuAPI: Sendable {
     public func selectToken(
         clientSecret: String,
         mint: String?
-    ) async throws -> KaanjuStatus {
-        guard clientSecret.hasPrefix("cs_") else { throw KaanjuError.missingClientSecret }
+    ) async throws -> ZuuppaStatus {
+        guard clientSecret.hasPrefix("cs_") else { throw ZuuppaError.missingClientSecret }
 
         // `mint` is encoded as an explicit null for SOL (not omitted), so the
         // server matches it against the accepted SOL entry.
@@ -175,7 +175,7 @@ public struct KaanjuAPI: Sendable {
         do {
             req.httpBody = try JSONEncoder().encode(body)
         } catch {
-            throw KaanjuError.transport("could not encode token selection: \(error)")
+            throw ZuuppaError.transport("could not encode token selection: \(error)")
         }
 
         let data: Data
@@ -183,18 +183,18 @@ public struct KaanjuAPI: Sendable {
         do {
             (data, response) = try await session.data(for: req)
         } catch {
-            throw KaanjuError.transport(error.localizedDescription)
+            throw ZuuppaError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else {
-            throw KaanjuError.transport("no HTTP response")
+            throw ZuuppaError.transport("no HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw KaanjuError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+            throw ZuuppaError.server(status: http.statusCode, message: Self.errorMessage(from: data))
         }
         do {
-            return try JSONDecoder().decode(KaanjuStatus.self, from: data)
+            return try JSONDecoder().decode(ZuuppaStatus.self, from: data)
         } catch {
-            throw KaanjuError.transport("could not decode status: \(error)")
+            throw ZuuppaError.transport("could not decode status: \(error)")
         }
     }
 
@@ -202,8 +202,8 @@ public struct KaanjuAPI: Sendable {
     /// USD-priced intent WITHOUT locking anything, so the SDK can show the buyer
     /// what each accepted token would cost. Public and unauthenticated (the secret
     /// scopes it to one intent).
-    public func quote(clientSecret: String) async throws -> KaanjuQuote {
-        guard clientSecret.hasPrefix("cs_") else { throw KaanjuError.missingClientSecret }
+    public func quote(clientSecret: String) async throws -> ZuuppaQuote {
+        guard clientSecret.hasPrefix("cs_") else { throw ZuuppaError.missingClientSecret }
 
         var comps = URLComponents(
             url: baseURL.appendingPathComponent("intents/quote"),
@@ -211,7 +211,7 @@ public struct KaanjuAPI: Sendable {
         )!
         comps.queryItems = [URLQueryItem(name: "client_secret", value: clientSecret)]
         guard let url = comps.url else {
-            throw KaanjuError.transport("could not build quote URL")
+            throw ZuuppaError.transport("could not build quote URL")
         }
 
         var req = URLRequest(url: url)
@@ -223,18 +223,18 @@ public struct KaanjuAPI: Sendable {
         do {
             (data, response) = try await session.data(for: req)
         } catch {
-            throw KaanjuError.transport(error.localizedDescription)
+            throw ZuuppaError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else {
-            throw KaanjuError.transport("no HTTP response")
+            throw ZuuppaError.transport("no HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw KaanjuError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+            throw ZuuppaError.server(status: http.statusCode, message: Self.errorMessage(from: data))
         }
         do {
-            return try JSONDecoder().decode(KaanjuQuote.self, from: data)
+            return try JSONDecoder().decode(ZuuppaQuote.self, from: data)
         } catch {
-            throw KaanjuError.transport("could not decode quote: \(error)")
+            throw ZuuppaError.transport("could not decode quote: \(error)")
         }
     }
 
@@ -243,8 +243,8 @@ public struct KaanjuAPI: Sendable {
     /// Authorized by the `client_secret`, same trust model as `selectToken`.
     /// Idempotent server-side; refused (409) once a payment has landed. Returns
     /// the updated status.
-    public func cancel(clientSecret: String) async throws -> KaanjuStatus {
-        guard clientSecret.hasPrefix("cs_") else { throw KaanjuError.missingClientSecret }
+    public func cancel(clientSecret: String) async throws -> ZuuppaStatus {
+        guard clientSecret.hasPrefix("cs_") else { throw ZuuppaError.missingClientSecret }
 
         struct Body: Encodable {
             let clientSecret: String
@@ -261,7 +261,7 @@ public struct KaanjuAPI: Sendable {
         do {
             req.httpBody = try JSONEncoder().encode(body)
         } catch {
-            throw KaanjuError.transport("could not encode cancel request: \(error)")
+            throw ZuuppaError.transport("could not encode cancel request: \(error)")
         }
 
         let data: Data
@@ -269,18 +269,18 @@ public struct KaanjuAPI: Sendable {
         do {
             (data, response) = try await session.data(for: req)
         } catch {
-            throw KaanjuError.transport(error.localizedDescription)
+            throw ZuuppaError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else {
-            throw KaanjuError.transport("no HTTP response")
+            throw ZuuppaError.transport("no HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw KaanjuError.server(status: http.statusCode, message: Self.errorMessage(from: data))
+            throw ZuuppaError.server(status: http.statusCode, message: Self.errorMessage(from: data))
         }
         do {
-            return try JSONDecoder().decode(KaanjuStatus.self, from: data)
+            return try JSONDecoder().decode(ZuuppaStatus.self, from: data)
         } catch {
-            throw KaanjuError.transport("could not decode status: \(error)")
+            throw ZuuppaError.transport("could not decode status: \(error)")
         }
     }
 

@@ -21,9 +21,9 @@ struct QRView: View {
                     .accessibilityLabel("Payment QR code")
             } else {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(KaanjuColor.surface)
+                    .fill(ZuuppaColor.surface)
                     .frame(width: size, height: size)
-                    .overlay(Text("QR unavailable").font(.caption).foregroundStyle(KaanjuColor.textSecondary))
+                    .overlay(Text("QR unavailable").font(.caption).foregroundStyle(ZuuppaColor.textSecondary))
             }
         }
     }

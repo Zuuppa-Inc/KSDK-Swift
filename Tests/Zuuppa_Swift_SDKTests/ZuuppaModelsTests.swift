@@ -1,7 +1,7 @@
 import XCTest
-@testable import kaanju_swift
+@testable import Zuuppa_Swift_SDK
 
-final class KaanjuModelsTests: XCTestCase {
+final class ZuuppaModelsTests: XCTestCase {
     /// The create response flattens the intent and adds `client_secret`.
     func testDecodeCreateResponse() throws {
         let json = """
@@ -19,7 +19,7 @@ final class KaanjuModelsTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let intent = try JSONDecoder().decode(KaanjuIntent.self, from: json)
+        let intent = try JSONDecoder().decode(ZuuppaIntent.self, from: json)
         XCTAssertEqual(intent.clientSecret, "cs_abc123")
         XCTAssertEqual(intent.expectedLamports, 10_000_000)
         XCTAssertTrue(intent.isSOL)
@@ -53,25 +53,25 @@ final class KaanjuModelsTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let status = try JSONDecoder().decode(KaanjuStatus.self, from: json)
+        let status = try JSONDecoder().decode(ZuuppaStatus.self, from: json)
         XCTAssertEqual(status.action, "swept")
         XCTAssertTrue(status.tokenRefunds.isEmpty)
         XCTAssertEqual(status.settlement?.destinationAmount, 9_995_000)
 
-        let phase = KaanjuPhase.from(action: status.action, shortfall: status.shortfallLamports)
+        let phase = ZuuppaPhase.from(action: status.action, shortfall: status.shortfallLamports)
         XCTAssertEqual(phase, .settled)
         XCTAssertTrue(phase.isTerminal)
     }
 
     func testUnderpaidPhaseCarriesShortfall() {
-        let phase = KaanjuPhase.from(action: "underpaid", shortfall: 500)
+        let phase = ZuuppaPhase.from(action: "underpaid", shortfall: 500)
         XCTAssertEqual(phase, .underpaid(shortfall: 500))
         XCTAssertFalse(phase.isTerminal)
     }
 
     func testAmountFormatting() {
-        XCTAssertEqual(KaanjuAmount.format(10_000_000, decimals: 9, symbol: "SOL"), "0.01 SOL")
-        XCTAssertEqual(KaanjuAmount.format(1_500_000, decimals: 6, symbol: "USDC"), "1.5 USDC")
+        XCTAssertEqual(ZuuppaAmount.format(10_000_000, decimals: 9, symbol: "SOL"), "0.01 SOL")
+        XCTAssertEqual(ZuuppaAmount.format(1_500_000, decimals: 6, symbol: "USDC"), "1.5 USDC")
     }
 
     /// A USD-priced create response carries `mode`/`price_usd_cents`/`accepted_tokens`
@@ -97,7 +97,7 @@ final class KaanjuModelsTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let intent = try JSONDecoder().decode(KaanjuIntent.self, from: json)
+        let intent = try JSONDecoder().decode(ZuuppaIntent.self, from: json)
         XCTAssertEqual(intent.mode, "custom")
         XCTAssertEqual(intent.priceUsdCents, 1250)
         XCTAssertTrue(intent.isUsdPriced)
@@ -127,7 +127,7 @@ final class KaanjuModelsTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let intent = try JSONDecoder().decode(KaanjuIntent.self, from: json)
+        let intent = try JSONDecoder().decode(ZuuppaIntent.self, from: json)
         XCTAssertNil(intent.mode)
         XCTAssertFalse(intent.isUsdPriced)
         XCTAssertFalse(intent.needsTokenSelection)
@@ -153,20 +153,20 @@ final class KaanjuModelsTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let status = try JSONDecoder().decode(KaanjuStatus.self, from: json)
+        let status = try JSONDecoder().decode(ZuuppaStatus.self, from: json)
         XCTAssertEqual(status.mode, "order")
         XCTAssertEqual(status.priceUsdCents, 999)
         XCTAssertTrue(status.needsTokenSelection)
 
         let reencoded = try JSONEncoder().encode(status)
-        let again = try JSONDecoder().decode(KaanjuStatus.self, from: reencoded)
+        let again = try JSONDecoder().decode(ZuuppaStatus.self, from: reencoded)
         XCTAssertEqual(again.mode, "order")
         XCTAssertEqual(again.priceUsdCents, 999)
         XCTAssertEqual(again.acceptedTokens?.count, 1)
     }
 
     /// An order-mode intent carries its cart snapshot as `line_items`, decoded
-    /// into `KaanjuLineItem`s with the charged prices.
+    /// into `ZuuppaLineItem`s with the charged prices.
     func testDecodeOrderLineItems() throws {
         let json = """
         {
@@ -188,7 +188,7 @@ final class KaanjuModelsTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let intent = try JSONDecoder().decode(KaanjuIntent.self, from: json)
+        let intent = try JSONDecoder().decode(ZuuppaIntent.self, from: json)
         XCTAssertEqual(intent.lineItems.count, 2)
         let shirt = intent.lineItems.first
         XCTAssertEqual(shirt?.name, "T-shirt")
@@ -201,10 +201,10 @@ final class KaanjuModelsTests: XCTestCase {
         XCTAssertEqual(intent.lineItems.last?.id, "Sticker")
 
         // Round-trip: line_items survive encode → decode.
-        let again = try JSONDecoder().decode(KaanjuIntent.self, from: JSONEncoder().encode(intent))
+        let again = try JSONDecoder().decode(ZuuppaIntent.self, from: JSONEncoder().encode(intent))
         XCTAssertEqual(again.lineItems.count, 2)
 
-        // A KaanjuStatus for the same order surfaces the identical shape.
+        // A ZuuppaStatus for the same order surfaces the identical shape.
         let statusJSON = """
         {
           "id": "77777777-7777-7777-7777-777777777777",
@@ -217,7 +217,7 @@ final class KaanjuModelsTests: XCTestCase {
           ]
         }
         """.data(using: .utf8)!
-        let status = try JSONDecoder().decode(KaanjuStatus.self, from: statusJSON)
+        let status = try JSONDecoder().decode(ZuuppaStatus.self, from: statusJSON)
         XCTAssertEqual(status.lineItems.count, 1)
         XCTAssertEqual(status.lineItems.first?.quantity, 3)
     }
@@ -236,7 +236,7 @@ final class KaanjuModelsTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let intent = try JSONDecoder().decode(KaanjuIntent.self, from: json)
+        let intent = try JSONDecoder().decode(ZuuppaIntent.self, from: json)
         XCTAssertTrue(intent.lineItems.isEmpty)
         // Empty line_items are omitted on encode (matches the wire shape).
         let encoded = String(data: try JSONEncoder().encode(intent), encoding: .utf8)!
@@ -256,7 +256,7 @@ final class KaanjuModelsTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let quote = try JSONDecoder().decode(KaanjuQuote.self, from: json)
+        let quote = try JSONDecoder().decode(ZuuppaQuote.self, from: json)
         XCTAssertEqual(quote.priceUsdCents, 1250)
         XCTAssertEqual(quote.expiresInSeconds, 600)
         XCTAssertEqual(quote.quotes.count, 2)

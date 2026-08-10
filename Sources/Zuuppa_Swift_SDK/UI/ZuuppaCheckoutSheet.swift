@@ -6,11 +6,11 @@ import UIKit
 /// wallet" button that runs the host's callback, and a settled/cancelled
 /// confirmation. Drives itself from a `CheckoutModel`.
 ///
-/// Internal — the SDK's single public entry point is the `.kaanjuCheckout(...)`
+/// Internal — the SDK's single public entry point is the `.zuuppaCheckout(...)`
 /// sheet modifier, which wraps this view. Not presented directly by hosts.
-struct KaanjuCheckoutScreen: View {
+struct ZuuppaCheckoutScreen: View {
     @State private var model: CheckoutModel
-    private let onFinish: ((KaanjuCheckoutResult) -> Void)?
+    private let onFinish: ((ZuuppaCheckoutResult) -> Void)?
     /// Guards `onFinish` to exactly one call — a checkout can reach terminal via
     /// polling (`onChange`) OR be cancelled on dismissal (`onDisappear`); without
     /// this both paths could fire. `@State`'s setter is nonmutating, so the guard
@@ -35,11 +35,11 @@ struct KaanjuCheckoutScreen: View {
     ///     QR-only sheet.
     ///   - onFinish: called once with the terminal result.
     init(
-        intent: KaanjuIntent,
-        config: KaanjuConfig = .default,
+        intent: ZuuppaIntent,
+        config: ZuuppaConfig = .default,
         session: URLSession = .shared,
-        onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)? = nil,
-        onFinish: ((KaanjuCheckoutResult) -> Void)? = nil
+        onPayWithWallet: (@Sendable (ZuuppaIntent) async throws -> Void)? = nil,
+        onFinish: ((ZuuppaCheckoutResult) -> Void)? = nil
     ) {
         _model = State(
             initialValue: CheckoutModel(
@@ -61,7 +61,7 @@ struct KaanjuCheckoutScreen: View {
                 // measured height (fields + footer), keeping the detent exact; only
                 // the horizontal inset is applied here. Comes after token selection
                 // (if any), matching the original order.
-                KaanjuDetailsView(model: model) {}
+                ZuuppaDetailsView(model: model) {}
                     .padding(.horizontal, 24)
             } else {
                 ScrollView {
@@ -69,7 +69,7 @@ struct KaanjuCheckoutScreen: View {
                         if model.isFinished {
                             terminalView
                         } else if model.needsTokenSelection {
-                            KaanjuTokenSelectView(model: model) {}
+                            ZuuppaTokenSelectView(model: model) {}
                         } else {
                             payView
                         }
@@ -89,7 +89,7 @@ struct KaanjuCheckoutScreen: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .foregroundStyle(KaanjuColor.textPrimary)
+        .foregroundStyle(ZuuppaColor.textPrimary)
         .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
         // Start small and expand to the exact height needed. Header (~44) +
         // measured content; the detent caps at ~92% of the screen via .large so a
@@ -99,7 +99,7 @@ struct KaanjuCheckoutScreen: View {
         // No grabber pill — the bare X in the header is the only chrome.
         .presentationDragIndicator(.hidden)
         // Paint the whole sheet surface with the brand background.
-        .presentationBackground(KaanjuColor.background)
+        .presentationBackground(ZuuppaColor.background)
         // A "copied" pill floats above the content when the buyer taps to copy.
         .overlay(alignment: .bottom) { toastView }
         .onAppear { model.start() }
@@ -124,7 +124,7 @@ struct KaanjuCheckoutScreen: View {
 
     /// Invoke `onFinish` at most once across the terminal-poll path and the
     /// dismiss-cancel path.
-    private func fireFinishOnce(_ result: KaanjuCheckoutResult) {
+    private func fireFinishOnce(_ result: ZuuppaCheckoutResult) {
         guard !didFinish else { return }
         didFinish = true
         onFinish?(result)
@@ -185,7 +185,7 @@ struct KaanjuCheckoutScreen: View {
                 } label: {
                     Image(systemName: "arrow.left")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(KaanjuColor.textSecondary)
+                        .foregroundStyle(ZuuppaColor.textSecondary)
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
@@ -199,7 +199,7 @@ struct KaanjuCheckoutScreen: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(KaanjuColor.textSecondary)
+                    .foregroundStyle(ZuuppaColor.textSecondary)
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
@@ -209,7 +209,7 @@ struct KaanjuCheckoutScreen: View {
             if showsDetailsStep {
                 Text("Your details")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(KaanjuColor.textPrimary)
+                    .foregroundStyle(ZuuppaColor.textPrimary)
             }
         }
         .padding(.horizontal, 16)
@@ -220,8 +220,8 @@ struct KaanjuCheckoutScreen: View {
 
     // A 1:1 port of the Zuuppa SDK's external-crypto QR screen (`ExternalCryptoView`):
     // SEND label → tappable amount → white QR plate → TO label → tappable address →
-    // spinner/status block → "keep open" hint. Only the palette (Kaanju colors),
-    // icons (SF Symbols), and the header differ. Kaanju's optional wallet button,
+    // spinner/status block → "keep open" hint. Only the palette (Zuuppa colors),
+    // icons (SF Symbols), and the header differ. Zuuppa's optional wallet button,
     // wrong-token refund notice, and error line are appended below.
     private var payView: some View {
         VStack(spacing: 0) {
@@ -240,7 +240,7 @@ struct KaanjuCheckoutScreen: View {
             Spacer().frame(height: 14)
             Text("Keep this screen open! Your payment is detected automatically, usually within seconds.")
                 .font(.system(size: 12.5))
-                .foregroundStyle(KaanjuColor.textSecondary)
+                .foregroundStyle(ZuuppaColor.textSecondary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(12.5 * 0.4)
 
@@ -248,7 +248,7 @@ struct KaanjuCheckoutScreen: View {
                 Spacer().frame(height: 14)
                 Text("An unexpected token was received and is being returned to you.")
                     .font(.footnote)
-                    .foregroundStyle(KaanjuColor.warning)
+                    .foregroundStyle(ZuuppaColor.warning)
                     .multilineTextAlignment(.center)
             }
 
@@ -257,15 +257,15 @@ struct KaanjuCheckoutScreen: View {
                 Button(action: { model.payWithWallet() }) {
                     HStack {
                         if model.isPayingWithWallet {
-                            ProgressView().tint(KaanjuColor.accentText)
+                            ProgressView().tint(ZuuppaColor.accentText)
                         }
                         Text(model.config.payWithWalletTitle)
                             .fontWeight(.semibold)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(KaanjuColor.accent)
-                    .foregroundStyle(KaanjuColor.accentText)
+                    .background(ZuuppaColor.accent)
+                    .foregroundStyle(ZuuppaColor.accentText)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .disabled(model.isPayingWithWallet)
@@ -275,7 +275,7 @@ struct KaanjuCheckoutScreen: View {
                 Spacer().frame(height: 14)
                 Text(err)
                     .font(.footnote)
-                    .foregroundStyle(KaanjuColor.danger)
+                    .foregroundStyle(ZuuppaColor.danger)
                     .multilineTextAlignment(.center)
             }
         }
@@ -289,7 +289,7 @@ struct KaanjuCheckoutScreen: View {
         Text(text)
             .font(.system(size: 12, weight: .bold))
             .tracking(1.5)
-            .foregroundStyle(KaanjuColor.textSecondary)
+            .foregroundStyle(ZuuppaColor.textSecondary)
     }
 
     /// The hero amount: big number + asset symbol, tap-to-copy. Falls back to a
@@ -303,10 +303,10 @@ struct KaanjuCheckoutScreen: View {
                         Text(payAmountNumber)
                             .font(.system(size: 44, weight: .heavy))
                             .tracking(-1)
-                            .foregroundStyle(KaanjuColor.textPrimary)
+                            .foregroundStyle(ZuuppaColor.textPrimary)
                         Text(model.payAssetLabel)
                             .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(KaanjuColor.textSecondary)
+                            .foregroundStyle(ZuuppaColor.textSecondary)
                             .padding(.bottom, 6)
                     }
                     .lineLimit(1)
@@ -315,10 +315,10 @@ struct KaanjuCheckoutScreen: View {
                     HStack(spacing: 5) {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 13))
-                            .foregroundStyle(KaanjuColor.accent)
+                            .foregroundStyle(ZuuppaColor.accent)
                         Text("Tap to copy")
                             .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundStyle(KaanjuColor.accent)
+                            .foregroundStyle(ZuuppaColor.accent)
                     }
                 }
             }
@@ -326,7 +326,7 @@ struct KaanjuCheckoutScreen: View {
         } else {
             Text("Any amount")
                 .font(.system(size: 34, weight: .heavy))
-                .foregroundStyle(KaanjuColor.textSecondary)
+                .foregroundStyle(ZuuppaColor.textSecondary)
         }
     }
 
@@ -343,10 +343,10 @@ struct KaanjuCheckoutScreen: View {
             HStack(spacing: 8) {
                 Text(shortAddress)
                     .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(KaanjuColor.textPrimary)
+                    .foregroundStyle(ZuuppaColor.textPrimary)
                 Image(systemName: "doc.on.doc")
                     .font(.system(size: 16))
-                    .foregroundStyle(KaanjuColor.accent)
+                    .foregroundStyle(ZuuppaColor.accent)
             }
         }
         .buttonStyle(.plain)
@@ -377,7 +377,7 @@ struct KaanjuCheckoutScreen: View {
                 Spacer().frame(height: 3)
                 Text(message)
                     .font(.system(size: 13.5))
-                    .foregroundStyle(KaanjuColor.textSecondary)
+                    .foregroundStyle(ZuuppaColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(13.5 * 0.35)
             }
@@ -406,7 +406,7 @@ struct KaanjuCheckoutScreen: View {
         } else {
             base = model.payExpectedLamports ?? 0
         }
-        return KaanjuAmount.numberString(base, decimals: model.payDecimals)
+        return ZuuppaAmount.numberString(base, decimals: model.payDecimals)
     }
 
     /// The deposit address, truncated the same way Zuuppa's screen does.
@@ -419,10 +419,10 @@ struct KaanjuCheckoutScreen: View {
     /// Status color for the (non-terminal) phases the pay view renders.
     private var payStatusColor: Color {
         switch model.phase {
-        case .settling: return KaanjuColor.success
-        case .underpaid: return KaanjuColor.warning
-        case .refunding: return KaanjuColor.warning
-        default: return KaanjuColor.accent
+        case .settling: return ZuuppaColor.success
+        case .underpaid: return ZuuppaColor.warning
+        case .refunding: return ZuuppaColor.warning
+        default: return ZuuppaColor.accent
         }
     }
 
@@ -469,10 +469,10 @@ struct KaanjuCheckoutScreen: View {
         if let toast {
             Text(toast)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(KaanjuColor.accentText)
+                .foregroundStyle(ZuuppaColor.accentText)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(KaanjuColor.accent, in: Capsule())
+                .background(ZuuppaColor.accent, in: Capsule())
                 .padding(.bottom, 24)
                 .transition(.opacity)
         }
@@ -493,14 +493,14 @@ struct KaanjuCheckoutScreen: View {
             if let message = model.status?.message {
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(KaanjuColor.textSecondary)
+                    .foregroundStyle(ZuuppaColor.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
             if let s = model.status?.settlement {
-                Text("Received \(KaanjuAmount.format(s.destinationAmount, decimals: s.decimals, symbol: s.asset == "SOL" ? "SOL" : s.asset))")
+                Text("Received \(ZuuppaAmount.format(s.destinationAmount, decimals: s.decimals, symbol: s.asset == "SOL" ? "SOL" : s.asset))")
                     .font(.footnote)
-                    .foregroundStyle(KaanjuColor.textSecondary)
+                    .foregroundStyle(ZuuppaColor.textSecondary)
             }
 
             Button {
@@ -510,8 +510,8 @@ struct KaanjuCheckoutScreen: View {
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(KaanjuColor.accent)
-                    .foregroundStyle(KaanjuColor.accentText)
+                    .background(ZuuppaColor.accent)
+                    .foregroundStyle(ZuuppaColor.accentText)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .padding(.top, 8)
@@ -532,11 +532,11 @@ struct KaanjuCheckoutScreen: View {
 
     private var terminalColor: Color {
         switch model.phase {
-        case .settled, .settling: return KaanjuColor.success
-        case .refunded: return KaanjuColor.accent
-        case .refundFailed: return KaanjuColor.danger
-        case .cancelled: return KaanjuColor.textTertiary
-        default: return KaanjuColor.textTertiary
+        case .settled, .settling: return ZuuppaColor.success
+        case .refunded: return ZuuppaColor.accent
+        case .refundFailed: return ZuuppaColor.danger
+        case .cancelled: return ZuuppaColor.textTertiary
+        default: return ZuuppaColor.textTertiary
         }
     }
 
@@ -558,7 +558,7 @@ struct KaanjuCheckoutScreen: View {
 }
 
 /// Carries the measured content height up so the sheet can size itself to fit.
-/// Shared with `KaanjuDetailsView`, which measures its own (fields + footer)
+/// Shared with `ZuuppaDetailsView`, which measures its own (fields + footer)
 /// natural height so the details step sizes to content like every other step.
 struct ContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0

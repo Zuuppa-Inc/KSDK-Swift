@@ -6,7 +6,7 @@ extension String {
 }
 
 /// Whether a checkout field is collected, and if so whether it's required.
-public enum KaanjuFieldRequirement: String, Sendable, Codable {
+public enum ZuuppaFieldRequirement: String, Sendable, Codable {
     /// Don't show or collect this field.
     case off
     /// Show it, but the buyer may leave it blank.
@@ -25,23 +25,23 @@ public enum KaanjuFieldRequirement: String, Sendable, Codable {
 /// collects nothing and goes straight to payment — opt in to what you need.
 ///
 /// ```swift
-/// var cfg = KaanjuConfig.default
+/// var cfg = ZuuppaConfig.default
 /// cfg.fields.name = .required
 /// cfg.fields.email = .required
 /// cfg.fields.address = .optional
 /// ```
-public struct KaanjuCheckoutFields: Sendable, Equatable {
+public struct ZuuppaCheckoutFields: Sendable, Equatable {
     /// Buyer's first + last name.
-    public var name: KaanjuFieldRequirement
+    public var name: ZuuppaFieldRequirement
     /// Buyer's email (validated as an address when required/provided).
-    public var email: KaanjuFieldRequirement
+    public var email: ZuuppaFieldRequirement
     /// Buyer's postal address (international — country picker + local fields).
-    public var address: KaanjuFieldRequirement
+    public var address: ZuuppaFieldRequirement
 
     public init(
-        name: KaanjuFieldRequirement = .off,
-        email: KaanjuFieldRequirement = .off,
-        address: KaanjuFieldRequirement = .off
+        name: ZuuppaFieldRequirement = .off,
+        email: ZuuppaFieldRequirement = .off,
+        address: ZuuppaFieldRequirement = .off
     ) {
         self.name = name
         self.email = email
@@ -49,7 +49,7 @@ public struct KaanjuCheckoutFields: Sendable, Equatable {
     }
 
     /// Collect nothing (default): the sheet skips the details step entirely.
-    public static let none = KaanjuCheckoutFields()
+    public static let none = ZuuppaCheckoutFields()
 
     /// True if any field is shown — i.e. the details step should appear.
     public var collectsAnything: Bool {
@@ -60,7 +60,7 @@ public struct KaanjuCheckoutFields: Sendable, Equatable {
 /// A postal address, kept generic so it works internationally: `country` is an
 /// ISO 3166-1 alpha-2 code (e.g. "US", "GB", "JP"); the rest map to the usual
 /// local components. All parts optional.
-public struct KaanjuAddress: Codable, Sendable, Equatable {
+public struct ZuuppaAddress: Codable, Sendable, Equatable {
     /// ISO 3166-1 alpha-2 country code (uppercased).
     public var country: String?
     public var line1: String?
@@ -98,18 +98,18 @@ public struct KaanjuAddress: Codable, Sendable, Equatable {
 }
 
 /// Buyer details collected at checkout. Every field optional; the integrator
-/// chooses which to gather via `KaanjuConfig.fields`.
-public struct KaanjuCustomerDetails: Codable, Sendable, Equatable {
+/// chooses which to gather via `ZuuppaConfig.fields`.
+public struct ZuuppaCustomerDetails: Codable, Sendable, Equatable {
     public var firstName: String?
     public var lastName: String?
     public var email: String?
-    public var address: KaanjuAddress?
+    public var address: ZuuppaAddress?
 
     public init(
         firstName: String? = nil,
         lastName: String? = nil,
         email: String? = nil,
-        address: KaanjuAddress? = nil
+        address: ZuuppaAddress? = nil
     ) {
         self.firstName = firstName
         self.lastName = lastName

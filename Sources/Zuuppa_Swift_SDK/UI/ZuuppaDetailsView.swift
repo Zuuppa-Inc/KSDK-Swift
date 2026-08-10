@@ -5,17 +5,17 @@ import SwiftUI
 /// anything. Renders only the enabled fields (name / email / address), marks
 /// required ones, and drives `model.submitDetails` on continue. International
 /// address entry uses a searchable country picker.
-struct KaanjuDetailsView: View {
+struct ZuuppaDetailsView: View {
     @Bindable var model: CheckoutModel
     /// Called once details are accepted (submitted or skipped) to advance to pay.
     let onContinue: () -> Void
 
-    private var fields: KaanjuCheckoutFields { model.config.fields }
+    private var fields: ZuuppaCheckoutFields { model.config.fields }
 
     /// The country's address format (which fields exist, their labels, and which
     /// are required) — re-derived when the buyer changes country.
-    private var addressFormat: KaanjuAddressFormat {
-        KaanjuAddressFormat.resolve(for: model.details.address?.country)
+    private var addressFormat: ZuuppaAddressFormat {
+        ZuuppaAddressFormat.resolve(for: model.details.address?.country)
     }
 
     /// Natural (unclamped) height of the scrollable fields, and of the footer, so
@@ -91,7 +91,7 @@ struct KaanjuDetailsView: View {
     private var addressFields: some View {
         let fmt = addressFormat
         return VStack(spacing: 12) {
-            KaanjuCountryPicker(
+            ZuuppaCountryPicker(
                 selectedCode: bindAddress(\.country),
                 required: fields.address.isRequired
             )
@@ -130,20 +130,20 @@ struct KaanjuDetailsView: View {
             if let err = model.errorMessage {
                 Text(err)
                     .font(.footnote)
-                    .foregroundStyle(KaanjuColor.danger)
+                    .foregroundStyle(ZuuppaColor.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Button(action: { model.submitDetails(onDone: onContinue) }) {
                 HStack {
-                    if model.isSubmittingDetails { ProgressView().tint(KaanjuColor.accentText) }
+                    if model.isSubmittingDetails { ProgressView().tint(ZuuppaColor.accentText) }
                     Text(model.isSubmittingDetails ? "Saving…" : "Continue")
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(KaanjuColor.accent)
-                .foregroundStyle(KaanjuColor.accentText)
+                .background(ZuuppaColor.accent)
+                .foregroundStyle(ZuuppaColor.accentText)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .disabled(model.isSubmittingDetails)
@@ -154,12 +154,12 @@ struct KaanjuDetailsView: View {
                     onContinue()
                 }
                 .font(.subheadline)
-                .foregroundStyle(KaanjuColor.textSecondary)
+                .foregroundStyle(ZuuppaColor.textSecondary)
             }
         }
         .padding(.top, 12)
         .padding(.bottom, 24)
-        .background(KaanjuColor.background)
+        .background(ZuuppaColor.background)
     }
 
     // MARK: - Field helpers
@@ -178,9 +178,9 @@ struct KaanjuDetailsView: View {
         HStack(spacing: 3) {
             Text(label)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(KaanjuColor.textPrimary)
+                .foregroundStyle(ZuuppaColor.textPrimary)
             if required {
-                Text("*").font(.body.weight(.semibold)).foregroundStyle(KaanjuColor.danger)
+                Text("*").font(.body.weight(.semibold)).foregroundStyle(ZuuppaColor.danger)
             }
         }
     }
@@ -191,16 +191,16 @@ struct KaanjuDetailsView: View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain)
             .font(.body)
-            .foregroundStyle(KaanjuColor.textPrimary)
+            .foregroundStyle(ZuuppaColor.textPrimary)
             .padding(.vertical, 11)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(KaanjuColor.surface))
+            .background(RoundedRectangle(cornerRadius: 10).fill(ZuuppaColor.surface))
     }
 
     /// Bind a top-level optional String field of the model's details to a
     /// non-optional String the TextField wants (nil <-> "").
-    private func bind(_ key: WritableKeyPath<KaanjuCustomerDetails, String?>) -> Binding<String> {
+    private func bind(_ key: WritableKeyPath<ZuuppaCustomerDetails, String?>) -> Binding<String> {
         Binding(
             get: { model.details[keyPath: key] ?? "" },
             set: { model.details[keyPath: key] = $0.isEmpty ? nil : $0 }
@@ -208,11 +208,11 @@ struct KaanjuDetailsView: View {
     }
 
     /// Same, for a field nested on the address (creating the address on demand).
-    private func bindAddress(_ key: WritableKeyPath<KaanjuAddress, String?>) -> Binding<String> {
+    private func bindAddress(_ key: WritableKeyPath<ZuuppaAddress, String?>) -> Binding<String> {
         Binding(
             get: { model.details.address?[keyPath: key] ?? "" },
             set: {
-                var addr = model.details.address ?? KaanjuAddress()
+                var addr = model.details.address ?? ZuuppaAddress()
                 addr[keyPath: key] = $0.isEmpty ? nil : $0
                 model.details.address = addr
             }
@@ -222,22 +222,22 @@ struct KaanjuDetailsView: View {
 
 /// A searchable, global country selector. Shows the selected country's flag +
 /// name; tapping opens a searchable list of every ISO country (localized).
-struct KaanjuCountryPicker: View {
+struct ZuuppaCountryPicker: View {
     @Binding var selectedCode: String
     let required: Bool
 
     @State private var showList = false
 
-    private var selected: KaanjuCountry? { KaanjuCountries.country(for: selectedCode) }
+    private var selected: ZuuppaCountry? { ZuuppaCountries.country(for: selectedCode) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 3) {
                 Text("Country")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(KaanjuColor.textPrimary)
+                    .foregroundStyle(ZuuppaColor.textPrimary)
                 if required {
-                    Text("*").font(.body.weight(.semibold)).foregroundStyle(KaanjuColor.danger)
+                    Text("*").font(.body.weight(.semibold)).foregroundStyle(ZuuppaColor.danger)
                 }
             }
             Button { showList = true } label: {
@@ -246,37 +246,37 @@ struct KaanjuCountryPicker: View {
                         Text(c.flag)
                         Text(c.name)
                             .font(.body)
-                            .foregroundStyle(KaanjuColor.textPrimary)
+                            .foregroundStyle(ZuuppaColor.textPrimary)
                     } else {
                         Text("Select country")
                             .font(.body)
-                            .foregroundStyle(KaanjuColor.textSecondary)
+                            .foregroundStyle(ZuuppaColor.textSecondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.down")
                         .font(.subheadline)
-                        .foregroundStyle(KaanjuColor.textSecondary)
+                        .foregroundStyle(ZuuppaColor.textSecondary)
                 }
                 .padding(.vertical, 11)
                 .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity)
-                .background(RoundedRectangle(cornerRadius: 10).fill(KaanjuColor.surface))
+                .background(RoundedRectangle(cornerRadius: 10).fill(ZuuppaColor.surface))
             }
         }
         .sheet(isPresented: $showList) {
-            KaanjuCountryList(selectedCode: $selectedCode)
+            ZuuppaCountryList(selectedCode: $selectedCode)
         }
     }
 }
 
 /// The searchable country list presented by the picker.
-private struct KaanjuCountryList: View {
+private struct ZuuppaCountryList: View {
     @Binding var selectedCode: String
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
 
-    private var results: [KaanjuCountry] {
-        let all = KaanjuCountries.all
+    private var results: [ZuuppaCountry] {
+        let all = ZuuppaCountries.all
         let q = query.trimmed
         guard !q.isEmpty else { return all }
         return all.filter {
@@ -293,10 +293,10 @@ private struct KaanjuCountryList: View {
                 } label: {
                     HStack {
                         Text(country.flag)
-                        Text(country.name).foregroundStyle(KaanjuColor.textPrimary)
+                        Text(country.name).foregroundStyle(ZuuppaColor.textPrimary)
                         Spacer()
                         if country.code == selectedCode.uppercased() {
-                            Image(systemName: "checkmark").foregroundStyle(KaanjuColor.accent)
+                            Image(systemName: "checkmark").foregroundStyle(ZuuppaColor.accent)
                         }
                     }
                 }

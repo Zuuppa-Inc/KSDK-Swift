@@ -3,13 +3,13 @@ import SwiftUI
 
 /// The checkout sheet's reusable color palette — the single place every view
 /// pulls its colors from, so the look is consistent and easy to retheme. Values
-/// come from the bundled `KaanjuColors.xcassets` color sets (each with a light
-/// and dark appearance), mirroring the Kaanju web design tokens (flat, dark,
+/// come from the bundled `ZuuppaColors.xcassets` color sets (each with a light
+/// and dark appearance), mirroring the Zuuppa web design tokens (flat, dark,
 /// one blue accent). Load via `Bundle.module` since this is a Swift package.
 ///
 /// Reference these instead of raw `.secondary` / `.white` / `Color.accentColor`
 /// so re-theming is a one-file change (edit the asset catalog).
-public enum KaanjuColor {
+public enum ZuuppaColor {
     /// The sheet's page background.
     public static let background = named("Background")
     /// Raised surfaces — cards, rows, the QR tile.

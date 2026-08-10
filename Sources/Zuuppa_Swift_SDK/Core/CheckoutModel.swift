@@ -9,13 +9,13 @@ import Observation
 public final class CheckoutModel {
     /// The intent being paid. Its `address` (QR) and asset are stable; its
     /// status is refreshed from polling.
-    public let intent: KaanjuIntent
-    public let config: KaanjuConfig
+    public let intent: ZuuppaIntent
+    public let config: ZuuppaConfig
 
     /// Latest polled status (nil until the first successful poll).
-    public private(set) var status: KaanjuStatus?
+    public private(set) var status: ZuuppaStatus?
     /// High-level phase for the UI, derived from the latest status.
-    public private(set) var phase: KaanjuPhase = .awaitingPayment
+    public private(set) var phase: ZuuppaPhase = .awaitingPayment
     /// Non-fatal error text to surface (polling/wallet), if any.
     public private(set) var errorMessage: String?
     /// True while the host's wallet callback is running.
@@ -23,7 +23,7 @@ public final class CheckoutModel {
 
     /// Buyer details being collected in the details step (bound by the form).
     /// Empty until the buyer types; submitted to the server on `submitDetails`.
-    public var details = KaanjuCustomerDetails()
+    public var details = ZuuppaCustomerDetails()
     /// True while the details step should be shown (before payment). Starts true
     /// when any field is configured; cleared once details are submitted.
     public private(set) var needsDetails: Bool
@@ -40,7 +40,7 @@ public final class CheckoutModel {
     /// a token is picked, so the details step knows it can offer a "back" button.
     private let hadTokenSelectionStep: Bool
     /// Per-token preview amounts for the token-select step (nil until loaded).
-    public private(set) var quotes: KaanjuQuote?
+    public private(set) var quotes: ZuuppaQuote?
     /// True while a token selection (lock) is in flight.
     public private(set) var isSelectingToken = false
     /// The mint the buyer selected (nil = SOL); set once selection succeeds.
@@ -53,28 +53,28 @@ public final class CheckoutModel {
     public private(set) var lockedDecimals: Int?
 
     /// Resolved human metadata (name / ticker / logo) per mint, keyed by the same
-    /// id `KaanjuAcceptedToken.id` uses ("sol" for native SOL). Filled in the
+    /// id `ZuuppaAcceptedToken.id` uses ("sol" for native SOL). Filled in the
     /// background from the token directory; the UI reads it to show real names
     /// instead of raw mint addresses. Empty until lookups return.
-    public private(set) var tokenMeta: [String: KaanjuTokenMeta] = [:]
+    public private(set) var tokenMeta: [String: ZuuppaTokenMeta] = [:]
 
-    private let api: KaanjuAPI
-    private let directory: KaanjuTokenDirectory
-    private let onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)?
+    private let api: ZuuppaAPI
+    private let directory: ZuuppaTokenDirectory
+    private let onPayWithWallet: (@Sendable (ZuuppaIntent) async throws -> Void)?
     private var pollTask: Task<Void, Never>?
     private var didFinish = false
     private var didCancel = false
 
     public init(
-        intent: KaanjuIntent,
-        config: KaanjuConfig = .default,
+        intent: ZuuppaIntent,
+        config: ZuuppaConfig = .default,
         session: URLSession = .shared,
-        directory: KaanjuTokenDirectory = .shared,
-        onPayWithWallet: (@Sendable (KaanjuIntent) async throws -> Void)? = nil
+        directory: ZuuppaTokenDirectory = .shared,
+        onPayWithWallet: (@Sendable (ZuuppaIntent) async throws -> Void)? = nil
     ) {
         self.intent = intent
         self.config = config
-        self.api = KaanjuAPI(config: config, session: session)
+        self.api = ZuuppaAPI(config: config, session: session)
         self.directory = directory
         self.onPayWithWallet = onPayWithWallet
         // Show the details step first only when the integrator configured fields
@@ -91,12 +91,12 @@ public final class CheckoutModel {
         self.hadTokenSelectionStep = tokenSelection
         // Seed the phase from the intent's initial status so the UI isn't blank
         // before the first poll returns.
-        self.phase = KaanjuPhase.from(action: Self.actionFromStatus(intent.status), shortfall: nil)
+        self.phase = ZuuppaPhase.from(action: Self.actionFromStatus(intent.status), shortfall: nil)
     }
 
     /// The accepted tokens the buyer may choose among (empty when the asset is
     /// already pinned). Sourced from the intent.
-    public var acceptedTokens: [KaanjuAcceptedToken] {
+    public var acceptedTokens: [ZuuppaAcceptedToken] {
         intent.acceptedTokens ?? []
     } 
 
@@ -121,31 +121,31 @@ public final class CheckoutModel {
     }
 
     /// Resolved metadata for an accepted token, if the lookup has returned.
-    public func meta(for token: KaanjuAcceptedToken) -> KaanjuTokenMeta? {
+    public func meta(for token: ZuuppaAcceptedToken) -> ZuuppaTokenMeta? {
         tokenMeta[token.id]
     }
 
     /// Inject resolved metadata directly, bypassing the network lookup — for tests
     /// and previews only.
-    func applyTokenMetaForTesting(_ meta: KaanjuTokenMeta, forKey key: String) {
+    func applyTokenMetaForTesting(_ meta: ZuuppaTokenMeta, forKey key: String) {
         tokenMeta[key] = meta
     }
 
     /// Drive the phase from a server `action` string as the poll loop would, for
     /// tests and previews only (bypasses the network).
     func applyActionForTesting(_ action: String, shortfall: Int64? = nil) {
-        phase = KaanjuPhase.from(action: action, shortfall: shortfall)
+        phase = ZuuppaPhase.from(action: action, shortfall: shortfall)
     }
 
     /// The best label for an accepted token row: the resolved name if we have it,
     /// else the server's symbol hint, else the token's own short-mint fallback.
-    public func displayName(for token: KaanjuAcceptedToken) -> String {
+    public func displayName(for token: ZuuppaAcceptedToken) -> String {
         tokenMeta[token.id]?.name ?? token.displayLabel
     }
 
     /// The ticker line under the name (e.g. "SOL" / "USDC"), or a generic asset
     /// kind when we can't resolve one.
-    public func ticker(for token: KaanjuAcceptedToken) -> String {
+    public func ticker(for token: ZuuppaAcceptedToken) -> String {
         if let symbol = tokenMeta[token.id]?.symbol, !symbol.isEmpty { return symbol }
         if let symbol = token.symbol, !symbol.isEmpty { return symbol }
         return token.isSOL ? "SOL" : "SPL token"
@@ -170,7 +170,7 @@ public final class CheckoutModel {
     /// The final result for `onFinish`, once finished. `settling` maps to a
     /// `.settled` success (the settlement breakdown isn't available yet, so it's
     /// carried as nil until the sweep records it).
-    public var result: KaanjuCheckoutResult {
+    public var result: ZuuppaCheckoutResult {
         switch phase {
         case .settled, .settling: return .settled(status?.settlement)
         case .expired: return .expired
@@ -187,7 +187,7 @@ public final class CheckoutModel {
         resolveTokenNames()
         guard pollTask == nil else { return }
         guard let secret = intent.clientSecret else {
-            errorMessage = KaanjuError.missingClientSecret.localizedDescription
+            errorMessage = ZuuppaError.missingClientSecret.localizedDescription
             return
         }
         pollTask = Task { [weak self] in
@@ -264,12 +264,12 @@ public final class CheckoutModel {
             }
         }
         if f.address.isRequired {
-            let a = d.address ?? KaanjuAddress()
+            let a = d.address ?? ZuuppaAddress()
             if (a.country ?? "").trimmed.isEmpty { return "Please select your country." }
             if (a.line1 ?? "").trimmed.isEmpty { return "Please enter your street address." }
             // Required-ness follows the country's own format: some countries have
             // no postal code, and only some collect (and require) a state/region.
-            let fmt = KaanjuAddressFormat.resolve(for: a.country)
+            let fmt = ZuuppaAddressFormat.resolve(for: a.country)
             if (a.city ?? "").trimmed.isEmpty { return "Please enter your \(fmt.cityLabel.lowercased())." }
             if fmt.showState, fmt.stateRequired, (a.state ?? "").trimmed.isEmpty {
                 return "Please enter your \(fmt.stateLabel.lowercased())."
@@ -312,7 +312,7 @@ public final class CheckoutModel {
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = (error as? KaanjuError)?.errorDescription
+                    self.errorMessage = (error as? ZuuppaError)?.errorDescription
                         ?? error.localizedDescription
                     self.isSubmittingDetails = false
                 }
@@ -385,7 +385,7 @@ public final class CheckoutModel {
     }
 
     /// The preview amount for one accepted token, if quotes are loaded.
-    public func quoteLine(for token: KaanjuAcceptedToken) -> KaanjuQuoteLine? {
+    public func quoteLine(for token: ZuuppaAcceptedToken) -> ZuuppaQuoteLine? {
         quotes?.quotes.first { $0.mint == token.mint }
     }
 
@@ -397,7 +397,7 @@ public final class CheckoutModel {
         guard !isSelectingToken else { return }
         guard let secret = intent.clientSecret else {
             // No secret to authorize the selection — can't proceed on this path.
-            errorMessage = KaanjuError.missingClientSecret.localizedDescription
+            errorMessage = ZuuppaError.missingClientSecret.localizedDescription
             return
         }
         isSelectingToken = true
@@ -415,7 +415,7 @@ public final class CheckoutModel {
                 }
             } catch {
                 await MainActor.run {
-                    self.errorMessage = (error as? KaanjuError)?.errorDescription
+                    self.errorMessage = (error as? ZuuppaError)?.errorDescription
                         ?? error.localizedDescription
                     self.isSelectingToken = false
                 }
@@ -424,13 +424,13 @@ public final class CheckoutModel {
     }
 
     /// Trim all fields and drop blanks before sending.
-    private func normalizedDetails() -> KaanjuCustomerDetails {
+    private func normalizedDetails() -> ZuuppaCustomerDetails {
         func c(_ s: String?) -> String? {
             let t = (s ?? "").trimmed
             return t.isEmpty ? nil : t
         }
         let f = config.fields
-        var out = KaanjuCustomerDetails()
+        var out = ZuuppaCustomerDetails()
         if f.name.isShown {
             out.firstName = c(details.firstName)
             out.lastName = c(details.lastName)
@@ -439,7 +439,7 @@ public final class CheckoutModel {
             out.email = c(details.email)
         }
         if f.address.isShown, let a = details.address {
-            let addr = KaanjuAddress(
+            let addr = ZuuppaAddress(
                 country: c(a.country)?.uppercased(),
                 line1: c(a.line1),
                 line2: c(a.line2),
@@ -481,10 +481,10 @@ public final class CheckoutModel {
         }
     }
 
-    private func apply(_ s: KaanjuStatus) {
+    private func apply(_ s: ZuuppaStatus) {
         status = s
         errorMessage = nil
-        phase = KaanjuPhase.from(action: s.action, shortfall: s.shortfallLamports)
+        phase = ZuuppaPhase.from(action: s.action, shortfall: s.shortfallLamports)
         // Once the amount is locked (by a token selection), capture the pinned
         // asset so the pay view can render the amount even though the immutable
         // `intent` was created without it.
@@ -526,7 +526,7 @@ public final class CheckoutModel {
     }
 
     /// Map a raw intent `status` string to the equivalent `action` string used
-    /// by `KaanjuPhase.from` (they diverge only for sweeping → paid).
+    /// by `ZuuppaPhase.from` (they diverge only for sweeping → paid).
     private static func actionFromStatus(_ status: String) -> String {
         switch status {
         case "pending": return "waiting"
