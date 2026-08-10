@@ -135,6 +135,73 @@ final class KaanjuDetailsTests: XCTestCase {
         XCTAssertEqual(model.details.firstName, "Ada") // details preserved
     }
 
+    /// The pay step offers "back" when a step preceded it (details or token
+    /// selection), returning to details first, and never once payment is settled.
+    @MainActor
+    func testBackFromPayReturnsToPrecedingStep() {
+        // Fixed-token intent with no collected fields → nothing precedes pay.
+        let bare = CheckoutModel(intent: intent, config: .default)
+        XCTAssertFalse(bare.canGoBackFromPay)
+
+        // Details configured → pay can go back to details.
+        var cfg = KaanjuConfig.default
+        cfg.fields.email = .required
+        let withDetails = CheckoutModel(intent: intent, config: cfg)
+        withDetails.skipDetails() // advance past details to pay
+        XCTAssertFalse(withDetails.needsDetails)
+        XCTAssertTrue(withDetails.canGoBackFromPay)
+        withDetails.backFromPay()
+        XCTAssertTrue(withDetails.needsDetails) // back on the details step
+
+        // USD-priced intent with no fields: token selection preceded pay, so the
+        // back affordance is available (the header pairs it with the pay step).
+        let usdIntent = KaanjuIntent(
+            id: "44444444-4444-4444-4444-444444444444",
+            address: "So1anaAddrExample1111111111111111111111111",
+            clientSecret: "cs_abc123",
+            priceUsdCents: 500,
+            acceptedTokens: [KaanjuAcceptedToken(kind: "native", mint: nil, symbol: "SOL")]
+        )
+        let usd = CheckoutModel(intent: usdIntent, config: .default)
+        XCTAssertTrue(usd.needsTokenSelection)
+        XCTAssertTrue(usd.canGoBackFromPay) // token selection preceded pay
+        usd.backFromPay()
+        XCTAssertTrue(usd.needsTokenSelection) // returns to (stays on) token select
+    }
+
+    /// Once payment is received (`settling`), the buyer's flow is finished: the
+    /// sheet shows confirmation, `onFinish` reports `.settled`, and a dismiss no
+    /// longer cancels — the server guarantees the funds reach the seller.
+    @MainActor
+    func testSettlingFinishesAsSettled() {
+        let model = CheckoutModel(intent: intent, config: .default)
+        XCTAssertFalse(model.isFinished) // awaiting payment
+
+        // Server reports funds received (paid/overpaid → settling).
+        model.applyActionForTesting("paid")
+        XCTAssertEqual(model.phase, .settling)
+        XCTAssertTrue(model.isFinished)
+        XCTAssertEqual(model.result, .settled(nil)) // success, no breakdown yet
+    }
+
+    /// An overpaid detection also finishes as settled (same commit point).
+    @MainActor
+    func testOverpaidFinishesAsSettled() {
+        let model = CheckoutModel(intent: intent, config: .default)
+        model.applyActionForTesting("overpaid")
+        XCTAssertEqual(model.phase, .settling)
+        XCTAssertTrue(model.isFinished)
+        XCTAssertEqual(model.result, .settled(nil))
+    }
+
+    /// Underpaid is not finished — the buyer still owes the shortfall.
+    @MainActor
+    func testUnderpaidIsNotFinished() {
+        let model = CheckoutModel(intent: intent, config: .default)
+        model.applyActionForTesting("underpaid", shortfall: 5_000_000)
+        XCTAssertFalse(model.isFinished)
+    }
+
     // MARK: - Per-country address format
 
     /// The format adapts field presence and labels per country.

@@ -22,6 +22,8 @@ struct KaanjuCheckoutScreen: View {
     /// Measured height of the laid-out content, used to size the sheet to fit its
     /// content exactly (and re-size as steps change). 0 until the first layout.
     @State private var contentHeight: CGFloat = 0
+    /// Transient "copied" toast shown when the buyer taps the amount or address.
+    @State private var toast: String?
 
     /// - Parameters:
     ///   - intent: the intent to pay (from your server's `POST /intents`,
@@ -64,7 +66,7 @@ struct KaanjuCheckoutScreen: View {
             } else {
                 ScrollView {
                     VStack(spacing: 24) {
-                        if model.phase.isTerminal {
+                        if model.isFinished {
                             terminalView
                         } else if model.needsTokenSelection {
                             KaanjuTokenSelectView(model: model) {}
@@ -98,21 +100,25 @@ struct KaanjuCheckoutScreen: View {
         .presentationDragIndicator(.hidden)
         // Paint the whole sheet surface with the brand background.
         .presentationBackground(KaanjuColor.background)
+        // A "copied" pill floats above the content when the buyer taps to copy.
+        .overlay(alignment: .bottom) { toastView }
         .onAppear { model.start() }
         // Dismissal is the single cancel point: whether the buyer taps the X or
         // swipes the sheet away, if the checkout is still resumable we cancel it
         // (server returns partial funds / marks it cancelled) and finish once.
         // Once terminal there's nothing to cancel — just stop polling.
         .onDisappear {
-            if !model.phase.isTerminal {
+            if !model.isFinished {
                 model.cancel()
                 fireFinishOnce(.cancelled)
             }
             model.stop()
         }
-        // Fire onFinish exactly once when we reach a terminal phase via polling.
-        .onChange(of: model.phase) { _, newPhase in
-            if newPhase.isTerminal { fireFinishOnce(model.result) }
+        // Fire onFinish exactly once when the buyer's flow finishes via polling —
+        // including `settling`, where the payment is committed (funds received) and
+        // we report success without waiting for the on-chain sweep.
+        .onChange(of: model.phase) { _, _ in
+            if model.isFinished { fireFinishOnce(model.result) }
         }
     }
 
@@ -131,7 +137,26 @@ struct KaanjuCheckoutScreen: View {
     /// Whether the details step is the current step: shown after any token
     /// selection (matching the branch order below) and never once terminal.
     private var showsDetailsStep: Bool {
-        !model.phase.isTerminal && !model.needsTokenSelection && model.needsDetails
+        !model.isFinished && !model.needsTokenSelection && model.needsDetails
+    }
+
+    /// Whether the pay view is the current step (not terminal, past any token
+    /// selection and details) — matching the branch order in `body`.
+    private var showsPayStep: Bool {
+        !model.isFinished && !model.needsTokenSelection && !model.needsDetails
+    }
+
+    /// Whether the header should show a back chevron, and what it does: the details
+    /// step goes back to token selection; the pay step goes back to its preceding
+    /// step. nil when there's nowhere to go back to.
+    private var backAction: (() -> Void)? {
+        if showsDetailsStep, model.canGoBackToTokenSelection {
+            return { model.backToTokenSelection() }
+        }
+        if showsPayStep, model.canGoBackFromPay {
+            return { model.backFromPay() }
+        }
+        return nil
     }
 
     private var sheetDetents: Set<PresentationDetent> {
@@ -152,13 +177,13 @@ struct KaanjuCheckoutScreen: View {
     // it stays centered regardless of the close button on the right.
     private var header: some View {
         HStack {
-            // A back chevron on the details step, but only when token selection
-            // preceded it (so details wasn't the opening screen).
-            if showsDetailsStep, model.canGoBackToTokenSelection {
+            // A back chevron whenever the current step has a preceding step to
+            // return to (details → token select; pay → its prior step).
+            if let back = backAction {
                 Button {
-                    model.backToTokenSelection()
+                    back()
                 } label: {
-                    Image(systemName: "chevron.left")
+                    Image(systemName: "arrow.left")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(KaanjuColor.textSecondary)
                         .frame(width: 32, height: 32)
@@ -193,31 +218,42 @@ struct KaanjuCheckoutScreen: View {
 
     // MARK: - Pay view
 
+    // A 1:1 port of the Zuuppa SDK's external-crypto QR screen (`ExternalCryptoView`):
+    // SEND label → tappable amount → white QR plate → TO label → tappable address →
+    // spinner/status block → "keep open" hint. Only the palette (Kaanju colors),
+    // icons (SF Symbols), and the header differ. Kaanju's optional wallet button,
+    // wrong-token refund notice, and error line are appended below.
     private var payView: some View {
-        VStack(spacing: 20) {
-            amountView
+        VStack(spacing: 0) {
+            Spacer().frame(height: 12)
+            payLabel(payIsUnderpaid ? "SEND REMAINING" : "SEND")
+            Spacer().frame(height: 10)
+            payAmount
+            Spacer().frame(height: 20)
+            qrPlate
+            Spacer().frame(height: 16)
+            payLabel("TO")
+            Spacer().frame(height: 8)
+            addressRow
+            Spacer().frame(height: 36)
+            payStatusBlock
+            Spacer().frame(height: 14)
+            Text("Keep this screen open! Your payment is detected automatically, usually within seconds.")
+                .font(.system(size: 12.5))
+                .foregroundStyle(KaanjuColor.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(12.5 * 0.4)
 
-            // QR codes need a white quiet zone to scan reliably, so this tile
-            // stays white in both light and dark — it's not a theming surface.
-            QRView(string: model.intent.address, size: 220)
-                .padding(16)
-                .background(RoundedRectangle(cornerRadius: 16).fill(.white))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(KaanjuColor.border))
-
-            addressView
-
-            StatusBadge(phase: model.phase)
-
-            if let message = model.status?.message {
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundStyle(KaanjuColor.textSecondary)
+            if let refunds = model.status?.tokenRefunds, !refunds.isEmpty {
+                Spacer().frame(height: 14)
+                Text("An unexpected token was received and is being returned to you.")
+                    .font(.footnote)
+                    .foregroundStyle(KaanjuColor.warning)
                     .multilineTextAlignment(.center)
             }
 
-            tokenRefundNotice
-
             if model.showsWalletButton {
+                Spacer().frame(height: 28)
                 Button(action: { model.payWithWallet() }) {
                     HStack {
                         if model.isPayingWithWallet {
@@ -236,42 +272,168 @@ struct KaanjuCheckoutScreen: View {
             }
 
             if let err = model.errorMessage {
+                Spacer().frame(height: 14)
                 Text(err)
                     .font(.footnote)
                     .foregroundStyle(KaanjuColor.danger)
                     .multilineTextAlignment(.center)
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
-    private var amountView: some View {
-        VStack(spacing: 4) {
-            if let expected = model.payExpectedLamports {
-                // A locked/fixed amount: show it in the pinned asset.
-                Text(KaanjuAmount.format(expected, decimals: model.payDecimals, symbol: model.payAssetLabel))
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-            } else if let cents = model.intent.priceUsdCents {
-                // USD-priced but no token chosen yet (shouldn't normally reach the
-                // pay view, but render the USD total defensively).
-                Text(Self.formatUSD(cents))
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                Text("Choose a token to pay")
-                    .font(.caption)
-                    .foregroundStyle(KaanjuColor.textSecondary)
-            } else {
-                Text("Any amount")
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
-                    .foregroundStyle(KaanjuColor.textSecondary)
+    // MARK: - Pay view pieces (ported from ExternalCryptoView)
+
+    /// A small, tracked, bold caption ("SEND" / "TO").
+    private func payLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12, weight: .bold))
+            .tracking(1.5)
+            .foregroundStyle(KaanjuColor.textSecondary)
+    }
+
+    /// The hero amount: big number + asset symbol, tap-to-copy. Falls back to a
+    /// plain "Any amount" label when the intent has no fixed/locked amount.
+    @ViewBuilder
+    private var payAmount: some View {
+        if hasFixedPayAmount {
+            Button { copyToClipboard(payAmountNumber, label: "Amount") } label: {
+                VStack(spacing: 6) {
+                    HStack(alignment: .lastTextBaseline, spacing: 8) {
+                        Text(payAmountNumber)
+                            .font(.system(size: 44, weight: .heavy))
+                            .tracking(-1)
+                            .foregroundStyle(KaanjuColor.textPrimary)
+                        Text(model.payAssetLabel)
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(KaanjuColor.textSecondary)
+                            .padding(.bottom, 6)
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 13))
+                            .foregroundStyle(KaanjuColor.accent)
+                        Text("Tap to copy")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(KaanjuColor.accent)
+                    }
+                }
             }
-            Text(payAssetSubtitle)
-                .font(.caption)
+            .buttonStyle(.plain)
+        } else {
+            Text("Any amount")
+                .font(.system(size: 34, weight: .heavy))
                 .foregroundStyle(KaanjuColor.textSecondary)
         }
     }
 
-    private var payAssetSubtitle: String {
-        if let name = model.payAssetName { return name }
-        return (model.lockedMint ?? model.intent.mint) == nil ? "Solana" : "SPL token"
+    /// The QR code on a white plate (white in both appearances so it always scans).
+    private var qrPlate: some View {
+        QRView(string: model.intent.address, size: 240)
+            .padding(18)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    /// The truncated deposit address, tap-to-copy.
+    private var addressRow: some View {
+        Button { copyToClipboard(model.intent.address, label: "Address") } label: {
+            HStack(spacing: 8) {
+                Text(shortAddress)
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(KaanjuColor.textPrimary)
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 16))
+                    .foregroundStyle(KaanjuColor.accent)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Copy address")
+    }
+
+    /// Spinner (tinted by status) + status title + server message. The pay view
+    /// only renders non-terminal phases, so the spinner is always the active
+    /// indicator — terminal states route to `terminalView`.
+    private var payStatusBlock: some View {
+        VStack(spacing: 0) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .tint(payStatusColor)
+                .frame(width: 26, height: 26)
+
+            Spacer().frame(height: 10)
+            Text(payStatusTitle)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(payStatusColor)
+                .multilineTextAlignment(.center)
+            // Skip the server message when it just repeats the title (e.g. both
+            // say "Waiting for payment") so it isn't shown twice. Compared after
+            // trimming trailing punctuation/space, since the server message ends
+            // with a period ("Waiting for payment.") but the title doesn't.
+            if let message = model.status?.message, !message.isEmpty,
+               !Self.sameStatusText(message, payStatusTitle) {
+                Spacer().frame(height: 3)
+                Text(message)
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(KaanjuColor.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(13.5 * 0.35)
+            }
+        }
+    }
+
+    // MARK: - Pay view derived state
+
+    /// Underpaid with a positive remainder still owed → show "SEND REMAINING".
+    private var payIsUnderpaid: Bool {
+        if case .underpaid(let shortfall) = model.phase { return (shortfall ?? 0) > 0 }
+        return false
+    }
+
+    /// Whether there's a concrete amount to show/copy (fixed or locked).
+    private var hasFixedPayAmount: Bool {
+        if payIsUnderpaid { return true }
+        return model.payExpectedLamports != nil
+    }
+
+    /// The numeric part of the hero amount (remaining when underpaid, else total).
+    private var payAmountNumber: String {
+        let base: Int64
+        if case .underpaid(let shortfall) = model.phase, let s = shortfall {
+            base = s
+        } else {
+            base = model.payExpectedLamports ?? 0
+        }
+        return KaanjuAmount.numberString(base, decimals: model.payDecimals)
+    }
+
+    /// The deposit address, truncated the same way Zuuppa's screen does.
+    private var shortAddress: String {
+        let a = model.intent.address
+        guard a.count > 16 else { return a }
+        return "\(a.prefix(8))...\(a.suffix(8))"
+    }
+
+    /// Status color for the (non-terminal) phases the pay view renders.
+    private var payStatusColor: Color {
+        switch model.phase {
+        case .settling: return KaanjuColor.success
+        case .underpaid: return KaanjuColor.warning
+        case .refunding: return KaanjuColor.warning
+        default: return KaanjuColor.accent
+        }
+    }
+
+    /// Status title for the (non-terminal) phases the pay view renders.
+    private var payStatusTitle: String {
+        switch model.phase {
+        case .settling: return "Payment received"
+        case .underpaid: return "Partial payment"
+        case .refunding: return "Refunding"
+        default: return "Waiting for payment"
+        }
     }
 
     /// Format integer USD cents as a "$X.YY" string.
@@ -280,33 +442,39 @@ struct KaanjuCheckoutScreen: View {
         return String(format: "$%.2f", dollars)
     }
 
-    private var addressView: some View {
-        VStack(spacing: 6) {
-            Text("Send to this address")
-                .font(.caption)
-                .foregroundStyle(KaanjuColor.textSecondary)
-            Button {
-                UIPasteboard.general.string = model.intent.address
-            } label: {
-                HStack(spacing: 6) {
-                    Text(truncated(model.intent.address))
-                        .font(.system(.footnote, design: .monospaced))
-                    Image(systemName: "doc.on.doc")
-                        .font(.caption2)
-                }
-                .foregroundStyle(KaanjuColor.textPrimary)
-            }
-            .accessibilityLabel("Copy address")
+    /// Whether two status strings are effectively the same, ignoring case and
+    /// trailing punctuation/whitespace ("Waiting for payment." == "Waiting for
+    /// payment").
+    private static func sameStatusText(_ a: String, _ b: String) -> Bool {
+        func normalize(_ s: String) -> String {
+            s.trimmingCharacters(in: CharacterSet(charactersIn: " .!,")).lowercased()
+        }
+        return normalize(a) == normalize(b)
+    }
+
+    // MARK: - Copy + toast
+
+    /// Copy a value and show a brief "… copied" pill (mirrors the app's SnackBar).
+    private func copyToClipboard(_ value: String, label: String) {
+        UIPasteboard.general.string = value
+        withAnimation { toast = "\(label) copied" }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation { toast = nil }
         }
     }
 
     @ViewBuilder
-    private var tokenRefundNotice: some View {
-        if let refunds = model.status?.tokenRefunds, !refunds.isEmpty {
-            Text("An unexpected token was received and is being returned to you.")
-                .font(.footnote)
-                .foregroundStyle(KaanjuColor.warning)
-                .multilineTextAlignment(.center)
+    private var toastView: some View {
+        if let toast {
+            Text(toast)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(KaanjuColor.accentText)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(KaanjuColor.accent, in: Capsule())
+                .padding(.bottom, 24)
+                .transition(.opacity)
         }
     }
 
@@ -352,7 +520,9 @@ struct KaanjuCheckoutScreen: View {
 
     private var terminalIcon: String {
         switch model.phase {
-        case .settled: return "checkmark.circle.fill"
+        // `settling` shows the same success as `settled`: funds are received and
+        // guaranteed to reach the seller, so the buyer sees payment complete.
+        case .settled, .settling: return "checkmark.circle.fill"
         case .refunded: return "arrow.uturn.left.circle.fill"
         case .refundFailed: return "exclamationmark.triangle.fill"
         case .cancelled: return "xmark.circle.fill"
@@ -362,7 +532,7 @@ struct KaanjuCheckoutScreen: View {
 
     private var terminalColor: Color {
         switch model.phase {
-        case .settled: return KaanjuColor.success
+        case .settled, .settling: return KaanjuColor.success
         case .refunded: return KaanjuColor.accent
         case .refundFailed: return KaanjuColor.danger
         case .cancelled: return KaanjuColor.textTertiary
@@ -372,7 +542,7 @@ struct KaanjuCheckoutScreen: View {
 
     private var terminalTitle: String {
         switch model.phase {
-        case .settled: return "Payment complete"
+        case .settled, .settling: return "Payment complete"
         case .refunded: return "Funds returned"
         case .refundFailed: return "Refund needs attention"
         case .expired: return "Payment expired"

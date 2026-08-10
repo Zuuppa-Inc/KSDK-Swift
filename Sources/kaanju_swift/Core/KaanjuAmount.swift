@@ -8,16 +8,21 @@ public enum KaanjuAmount {
         Double(baseUnits) / pow(10.0, Double(decimals))
     }
 
-    /// Human string like "0.05 SOL" or "1.5 <MINT>". Trims trailing zeros.
-    public static func format(_ baseUnits: Int64, decimals: Int, symbol: String) -> String {
+    /// Just the numeric part (no symbol), with trailing zeros trimmed — e.g.
+    /// "0.05". For UIs that render the amount and its asset symbol separately.
+    public static func numberString(_ baseUnits: Int64, decimals: Int) -> String {
         let value = ui(baseUnits, decimals: decimals)
         let nf = NumberFormatter()
         nf.numberStyle = .decimal
         nf.minimumFractionDigits = 0
         nf.maximumFractionDigits = max(0, min(decimals, 9))
         nf.usesGroupingSeparator = false
-        let num = nf.string(from: NSNumber(value: value)) ?? String(value)
-        return "\(num) \(symbol)"
+        return nf.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    /// Human string like "0.05 SOL" or "1.5 <MINT>". Trims trailing zeros.
+    public static func format(_ baseUnits: Int64, decimals: Int, symbol: String) -> String {
+        "\(numberString(baseUnits, decimals: decimals)) \(symbol)"
     }
 
     /// Convenience for an intent: format an amount in the intent's own asset.

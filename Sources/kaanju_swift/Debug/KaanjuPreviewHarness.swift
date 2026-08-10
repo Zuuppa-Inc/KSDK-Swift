@@ -50,7 +50,7 @@ public struct KaanjuPreviewHarness: View {
 
     // Pricing mode + USD/order fields.
     @State private var mode: HarnessMode = .customToken
-    @State private var amountUSD: String = "5.00"
+    @State private var amountUSD: String = "1.00"
     // Accepted pay-in tokens (USD/order modes). The buyer picks among these.
     @State private var acceptSOL = true
     @State private var acceptUSDC = false

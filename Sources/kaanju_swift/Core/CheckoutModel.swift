@@ -27,6 +27,9 @@ public final class CheckoutModel {
     /// True while the details step should be shown (before payment). Starts true
     /// when any field is configured; cleared once details are submitted.
     public private(set) var needsDetails: Bool
+    /// Whether the details step was ever part of this checkout. Stays true after
+    /// details are submitted, so the pay step knows it can offer a "back" button.
+    private let hadDetailsStep: Bool
     /// True while a details submission is in flight.
     public private(set) var isSubmittingDetails = false
 
@@ -76,7 +79,9 @@ public final class CheckoutModel {
         self.onPayWithWallet = onPayWithWallet
         // Show the details step first only when the integrator configured fields
         // to collect AND we can actually submit them (we need a client_secret).
-        self.needsDetails = config.fields.collectsAnything && intent.clientSecret != nil
+        let details = config.fields.collectsAnything && intent.clientSecret != nil
+        self.needsDetails = details
+        self.hadDetailsStep = details
         // Show the token-select step for a USD-priced intent whose amount isn't
         // locked yet (and only when we can actually select — need a client_secret).
         let tokenSelection = intent.needsTokenSelection && intent.clientSecret != nil
@@ -126,6 +131,12 @@ public final class CheckoutModel {
         tokenMeta[key] = meta
     }
 
+    /// Drive the phase from a server `action` string as the poll loop would, for
+    /// tests and previews only (bypasses the network).
+    func applyActionForTesting(_ action: String, shortfall: Int64? = nil) {
+        phase = KaanjuPhase.from(action: action, shortfall: shortfall)
+    }
+
     /// The best label for an accepted token row: the resolved name if we have it,
     /// else the server's symbol hint, else the token's own short-mint fallback.
     public func displayName(for token: KaanjuAcceptedToken) -> String {
@@ -140,15 +151,28 @@ public final class CheckoutModel {
         return token.isSOL ? "SOL" : "SPL token"
     }
 
-    /// Whether the "Pay with wallet" button should be shown.
-    public var showsWalletButton: Bool {
-        config.showPayWithWallet && onPayWithWallet != nil && !phase.isTerminal
+    /// Whether the buyer's flow has reached a stopping point: any terminal phase,
+    /// OR `settling`. We treat `settling` as done because once funds are received
+    /// the server guarantees they reach the seller — completing to the seller if
+    /// the split settlement gets stuck rather than ever returning them to the
+    /// buyer. So the buyer can be confidently shown success and finished the moment
+    /// we detect payment, without waiting for the on-chain sweep. Drives the
+    /// confirmation screen, `onFinish`, poll-stop, and cancellation guarding.
+    public var isFinished: Bool {
+        phase.isTerminal || phase == .settling
     }
 
-    /// The final result for `onFinish`, once terminal.
+    /// Whether the "Pay with wallet" button should be shown.
+    public var showsWalletButton: Bool {
+        config.showPayWithWallet && onPayWithWallet != nil && !isFinished
+    }
+
+    /// The final result for `onFinish`, once finished. `settling` maps to a
+    /// `.settled` success (the settlement breakdown isn't available yet, so it's
+    /// carried as nil until the sweep records it).
     public var result: KaanjuCheckoutResult {
         switch phase {
-        case .settled: return .settled(status?.settlement)
+        case .settled, .settling: return .settled(status?.settlement)
         case .expired: return .expired
         case .refunded: return .refunded
         case .cancelled: return .cancelled
@@ -185,7 +209,10 @@ public final class CheckoutModel {
     /// torn down, and any failure is harmless because the server's 10-minute
     /// timeout is the backstop. No-op once terminal or already cancelled.
     public func cancel() {
-        guard !phase.isTerminal, !didCancel else { return }
+        // Never cancel once the buyer's flow is finished — in particular, once
+        // funds are received (`settling`) the payment is committed and must not be
+        // cancelled (the server no-ops it anyway, but we don't even try).
+        guard !isFinished, !didCancel else { return }
         didCancel = true
         stop()
         guard let secret = intent.clientSecret, secret.hasPrefix("cs_") else { return }
@@ -313,6 +340,27 @@ public final class CheckoutModel {
         needsTokenSelection = true
     }
 
+    /// Whether the pay step can go back to a preceding step — only before payment
+    /// starts (still awaiting), and only when some step preceded it (details or
+    /// token selection). Nothing to go back to once funds are in flight/terminal.
+    public var canGoBackFromPay: Bool {
+        guard phase == .awaitingPayment, !isPayingWithWallet else { return false }
+        return hadDetailsStep || hadTokenSelectionStep
+    }
+
+    /// Return from the pay step to the previous step: the details step if it was
+    /// part of this checkout, otherwise the token-select step. Re-shows that step
+    /// so the buyer can revise their entry / pay-in token before paying.
+    public func backFromPay() {
+        guard canGoBackFromPay else { return }
+        errorMessage = nil
+        if hadDetailsStep {
+            needsDetails = true
+        } else if hadTokenSelectionStep {
+            needsTokenSelection = true
+        }
+    }
+
     /// Whether the details step may be skipped (nothing is required).
     public var detailsAreSkippable: Bool {
         let f = config.fields
@@ -419,7 +467,10 @@ public final class CheckoutModel {
             do {
                 let s = try await api.status(clientSecret: clientSecret)
                 apply(s)
-                if phase.isTerminal { break }
+                // Stop as soon as the buyer's flow is finished — including
+                // `settling`, where the payment is committed and we send the buyer
+                // to confirmation without waiting for the sweep.
+                if isFinished { break }
             } catch is CancellationError {
                 break
             } catch {
