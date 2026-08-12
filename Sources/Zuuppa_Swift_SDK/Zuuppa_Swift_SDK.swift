@@ -31,8 +31,12 @@
 //  // 2. In the app, decode it and present the sheet:
 //  .zuuppaCheckout(isPresented: $showing, intent: intent,
 //                  onPayWithWallet: { intent in try await myWallet.pay(intent) },
-//                  onFinish: { result in ... })
+//                  onFinish: { result in ... }) // fires after the sheet closes
 //  ```
+//
+//  On success the sheet shows a brief confirmation and dismisses itself; `onFinish`
+//  is called once, after the sheet is gone, so it's always safe to tear down or
+//  present your own follow-up UI there.
 
 import Foundation
 

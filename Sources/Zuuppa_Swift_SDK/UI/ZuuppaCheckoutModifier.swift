@@ -9,7 +9,7 @@ public extension View {
     ///     isPresented: $showCheckout,
     ///     intent: intent,
     ///     onPayWithWallet: { intent in try await wallet.pay(to: intent.address) },
-    ///     onFinish: { result in if case .settled = result { /* … */ } }
+    ///     onFinish: { result in if case .settled = result { /* show your receipt */ } }
     /// )
     /// ```
     ///
@@ -18,9 +18,12 @@ public extension View {
     ///   - intent: the intent to pay (must carry a `client_secret`).
     ///   - config: presentation + polling config.
     ///   - onPayWithWallet: your wallet logic; omit for a QR-only sheet.
-    ///   - onFinish: terminal result callback. The sheet is NOT auto-dismissed on
-    ///     finish (the buyer taps "Done"); flip `isPresented` here if you want to
-    ///     dismiss on cancellation.
+    ///   - onFinish: terminal result callback. Called exactly once, **after the
+    ///     sheet has closed** — so it's always safe to tear down / present your own
+    ///     follow-up UI here. On success the sheet shows a brief confirmation and
+    ///     auto-dismisses; on cancel or close it reports `.cancelled`. The SDK owns
+    ///     dismissal, so you don't need to flip `isPresented` yourself (SwiftUI
+    ///     resets it for you when the sheet closes).
     func zuuppaCheckout(
         isPresented: Binding<Bool>,
         intent: ZuuppaIntent,

@@ -11,11 +11,14 @@ import UIKit
 struct ZuuppaCheckoutScreen: View {
     @State private var model: CheckoutModel
     private let onFinish: ((ZuuppaCheckoutResult) -> Void)?
-    /// Guards `onFinish` to exactly one call — a checkout can reach terminal via
-    /// polling (`onChange`) OR be cancelled on dismissal (`onDisappear`); without
-    /// this both paths could fire. `@State`'s setter is nonmutating, so the guard
-    /// works from the escaping view-lifecycle closures below.
+    /// Guards `onFinish` to exactly one call. It's fired from `.onDisappear`, which
+    /// can run more than once across a view's lifetime; this makes it idempotent.
+    /// `@State`'s setter is nonmutating, so the guard works from the escaping
+    /// view-lifecycle closures below.
     @State private var didFinish = false
+    /// Guards the success auto-dismiss timer to a single schedule, so re-renders of
+    /// the terminal view don't stack multiple dismiss tasks.
+    @State private var didScheduleAutoDismiss = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -103,22 +106,24 @@ struct ZuuppaCheckoutScreen: View {
         // A "copied" pill floats above the content when the buyer taps to copy.
         .overlay(alignment: .bottom) { toastView }
         .onAppear { model.start() }
-        // Dismissal is the single cancel point: whether the buyer taps the X or
-        // swipes the sheet away, if the checkout is still resumable we cancel it
-        // (server returns partial funds / marks it cancelled) and finish once.
-        // Once terminal there's nothing to cancel — just stop polling.
+        // Dismissal is the single point where the host is notified — the result is
+        // delivered *after* the sheet is gone, so `onFinish` consistently means
+        // "the sheet closed, here's the outcome" (the host never has to guess when
+        // it's safe to tear down). Whether the buyer taps the X, swipes away, or the
+        // success screen auto-dismisses:
+        //   - finished  → report the terminal result (settled/expired/refunded/…)
+        //   - otherwise → the checkout is still resumable, so cancel it (server
+        //                  returns partial funds / marks it cancelled) and report
+        //                  `.cancelled`.
+        // Either way, stop polling.
         .onDisappear {
-            if !model.isFinished {
+            if model.isFinished {
+                fireFinishOnce(model.result)
+            } else {
                 model.cancel()
                 fireFinishOnce(.cancelled)
             }
             model.stop()
-        }
-        // Fire onFinish exactly once when the buyer's flow finishes via polling —
-        // including `settling`, where the payment is committed (funds received) and
-        // we report success without waiting for the on-chain sweep.
-        .onChange(of: model.phase) { _, _ in
-            if model.isFinished { fireFinishOnce(model.result) }
         }
     }
 
@@ -503,20 +508,45 @@ struct ZuuppaCheckoutScreen: View {
                     .foregroundStyle(ZuuppaColor.textSecondary)
             }
 
-            Button {
-                dismiss()
-            } label: {
-                Text("Done")
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(ZuuppaColor.accent)
-                    .foregroundStyle(ZuuppaColor.accentText)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            // Success closes itself: the buyer gets a brief confirmation, then the
+            // sheet auto-dismisses (Apple Pay style). The host is notified from
+            // `.onDisappear` after we're gone, so it can't pre-empt this screen.
+            // Non-success terminal states (expired / refund needs attention / …)
+            // stay put behind an explicit Done button so the buyer can read them.
+            if !isSuccessTerminal {
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(ZuuppaColor.accent)
+                        .foregroundStyle(ZuuppaColor.accentText)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.top, 8)
             }
-            .padding(.top, 8)
+        }
+        .onAppear {
+            guard isSuccessTerminal, !didScheduleAutoDismiss else { return }
+            didScheduleAutoDismiss = true
+            Task {
+                try? await Task.sleep(for: successAutoDismissDelay)
+                dismiss()
+            }
         }
     }
+
+    /// Whether the terminal phase is a success (payment received / swept). Success
+    /// auto-dismisses and hides the Done button; everything else waits for the
+    /// buyer to close it. Mirrors the success cases in `terminalIcon`/`-Title`.
+    private var isSuccessTerminal: Bool {
+        model.phase == .settled || model.phase == .settling
+    }
+
+    /// How long the success confirmation stays up before auto-dismissing.
+    private var successAutoDismissDelay: Duration { .seconds(2) }
 
     private var terminalIcon: String {
         switch model.phase {

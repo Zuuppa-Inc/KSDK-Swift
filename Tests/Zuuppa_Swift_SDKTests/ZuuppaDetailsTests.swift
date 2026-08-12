@@ -170,8 +170,11 @@ final class ZuuppaDetailsTests: XCTestCase {
     }
 
     /// Once payment is received (`settling`), the buyer's flow is finished: the
-    /// sheet shows confirmation, `onFinish` reports `.settled`, and a dismiss no
-    /// longer cancels — the server guarantees the funds reach the seller.
+    /// sheet shows a brief confirmation and then auto-dismisses, and a dismiss no
+    /// longer cancels — the server guarantees the funds reach the seller, so the
+    /// terminal result is `.settled`. (`onFinish` fires from the view's
+    /// `.onDisappear` once the sheet closes; here we assert the model-level state
+    /// that drives it.)
     @MainActor
     func testSettlingFinishesAsSettled() {
         let model = CheckoutModel(intent: intent, config: .default)
