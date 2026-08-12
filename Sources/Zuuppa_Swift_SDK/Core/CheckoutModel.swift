@@ -18,8 +18,25 @@ public final class CheckoutModel {
     public private(set) var phase: ZuuppaPhase = .awaitingPayment
     /// Non-fatal error text to surface (polling/wallet), if any.
     public private(set) var errorMessage: String?
-    /// True while the host's wallet callback is running.
-    public private(set) var isPayingWithWallet = false
+    /// Where the buyer is in the "Pay with wallet" flow. Drives a full-screen
+    /// processing state so the (slow) wallet + on-chain confirmation feels
+    /// responsive instead of leaving the QR screen looking idle.
+    public private(set) var walletFlow: WalletFlow = .idle
+
+    /// The stages of a "Pay with wallet" tap. `confirming` covers the host's
+    /// wallet callback running (Apple Pay / external wallet signing + submitting);
+    /// `submitted` covers the gap after it returns while we watch the chain for the
+    /// payment to land. Both show the processing screen; a cancel/error returns to
+    /// `idle` (back to the QR screen).
+    public enum WalletFlow: Sendable, Equatable {
+        case idle
+        case confirming
+        case submitted
+    }
+
+    /// Whether a wallet payment is in flight (either stage). The button uses this
+    /// to guard against re-taps; the UI uses it to show the processing screen.
+    public var isPayingWithWallet: Bool { walletFlow != .idle }
 
     /// Buyer details being collected in the details step (bound by the form).
     /// Empty until the buyer types; submitted to the server on `submitDetails`.
@@ -225,20 +242,36 @@ public final class CheckoutModel {
     /// Run the host's wallet callback. The poll loop keeps running, so however
     /// the payment lands (this callback, or the buyer scanning the QR), the UI
     /// advances the same way.
+    ///
+    /// Drives `walletFlow` so the UI can show a full-screen processing state:
+    ///   - `.confirming` while the callback runs (wallet signing/submitting)
+    ///   - `.submitted` once it returns successfully, while we wait for the payment
+    ///     to be detected on-chain (the poll loop advances to a terminal phase)
+    ///   - back to `.idle` on cancel or error, returning the buyer to the QR screen
+    /// We deliberately do NOT reset to `.idle` on success: the buyer stays on the
+    /// processing screen until the poll loop flips to a terminal phase (settling),
+    /// which routes to the confirmation screen.
     public func payWithWallet() {
-        guard let onPayWithWallet, !isPayingWithWallet else { return }
-        isPayingWithWallet = true
+        guard let onPayWithWallet, walletFlow == .idle else { return }
+        walletFlow = .confirming
         errorMessage = nil
         let intent = self.intent
         Task { [weak self] in
             do {
                 try await onPayWithWallet(intent)
+                // Submitted — keep the processing screen up and let polling carry
+                // the buyer to the confirmation screen once the payment lands.
+                await MainActor.run { self?.walletFlow = .submitted }
             } catch is CancellationError {
-                // Buyer backed out of their wallet flow; nothing to surface.
+                // Buyer backed out of their wallet flow: return to the QR screen
+                // (they can retry or scan/copy instead). Nothing to surface.
+                await MainActor.run { self?.walletFlow = .idle }
             } catch {
-                await MainActor.run { self?.errorMessage = error.localizedDescription }
+                await MainActor.run {
+                    self?.errorMessage = error.localizedDescription
+                    self?.walletFlow = .idle
+                }
             }
-            await MainActor.run { self?.isPayingWithWallet = false }
         }
     }
 

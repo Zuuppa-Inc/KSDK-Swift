@@ -71,6 +71,13 @@ struct ZuuppaCheckoutScreen: View {
                     VStack(spacing: 24) {
                         if model.isFinished {
                             terminalView
+                        } else if model.isPayingWithWallet {
+                            // A wallet payment is in flight — replace the QR screen
+                            // with a processing state so the (slow) wallet +
+                            // on-chain confirmation feels responsive. A cancel in
+                            // the wallet returns us to the QR screen (walletFlow ->
+                            // idle); a detected payment routes to terminalView.
+                            processingView
                         } else if model.needsTokenSelection {
                             ZuuppaTokenSelectView(model: model) {}
                         } else {
@@ -140,15 +147,19 @@ struct ZuuppaCheckoutScreen: View {
     /// re-sizes as the buyer moves between steps. Before the first measurement we
     /// fall back to `.medium` so the sheet has a sane initial size.
     /// Whether the details step is the current step: shown after any token
-    /// selection (matching the branch order below) and never once terminal.
+    /// selection (matching the branch order below) and never once terminal or
+    /// while a wallet payment is processing.
     private var showsDetailsStep: Bool {
-        !model.isFinished && !model.needsTokenSelection && model.needsDetails
+        !model.isFinished && !model.isPayingWithWallet
+            && !model.needsTokenSelection && model.needsDetails
     }
 
-    /// Whether the pay view is the current step (not terminal, past any token
-    /// selection and details) — matching the branch order in `body`.
+    /// Whether the pay view is the current step (not terminal, not processing a
+    /// wallet payment, past any token selection and details) — matching the branch
+    /// order in `body`. During processing the header shows no back chevron.
     private var showsPayStep: Bool {
-        !model.isFinished && !model.needsTokenSelection && !model.needsDetails
+        !model.isFinished && !model.isPayingWithWallet
+            && !model.needsTokenSelection && !model.needsDetails
     }
 
     /// Whether the header should show a back chevron, and what it does: the details
@@ -480,6 +491,51 @@ struct ZuuppaCheckoutScreen: View {
                 .background(ZuuppaColor.accent, in: Capsule())
                 .padding(.bottom, 24)
                 .transition(.opacity)
+        }
+    }
+
+    // MARK: - Processing view
+
+    /// Full-screen processing state shown after "Pay with wallet" is tapped, so the
+    /// slow wallet + on-chain confirmation feels responsive instead of leaving the
+    /// QR screen looking idle. Mirrors the terminal view's centered layout (a large
+    /// spinner in place of the checkmark). Two messages: while the wallet callback
+    /// runs (`confirming`), and after it returns while the payment is detected
+    /// on-chain (`submitted`). The header X still closes the whole sheet.
+    private var processingView: some View {
+        VStack(spacing: 20) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .controlSize(.large)
+                .tint(ZuuppaColor.accent)
+                .padding(.top, 20)
+
+            Text(processingTitle)
+                .font(.title2.weight(.bold))
+                .multilineTextAlignment(.center)
+
+            Text(processingSubtitle)
+                .font(.subheadline)
+                .foregroundStyle(ZuuppaColor.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
+
+    private var processingTitle: String {
+        switch model.walletFlow {
+        case .submitted: return "Confirming your payment"
+        default: return "Confirming in your wallet"
+        }
+    }
+
+    private var processingSubtitle: String {
+        switch model.walletFlow {
+        // The callback returned; now we're waiting for the network to detect it.
+        case .submitted: return "Waiting for the payment to confirm on-chain — this usually takes a few seconds. Keep this screen open."
+        // The wallet is open / signing. Keep it vague enough for any wallet.
+        default: return "Complete the payment in your wallet to continue."
         }
     }
 

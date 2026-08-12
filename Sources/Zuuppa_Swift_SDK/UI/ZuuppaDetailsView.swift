@@ -25,6 +25,13 @@ struct ZuuppaDetailsView: View {
     @State private var fieldsHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
 
+    /// Whether to show the "Saving…" spinner. Gated behind a short delay so a fast
+    /// submit (the common case) goes straight Continue → pay with no flash; the
+    /// spinner only appears if the request is actually slow.
+    @State private var showSaving = false
+    /// How long a submit must be in flight before we reveal the spinner.
+    private let savingSpinnerDelay: Duration = .milliseconds(400)
+
     var body: some View {
         // Scrollable fields above a Continue button pinned to the bottom.
         VStack(spacing: 0) {
@@ -46,6 +53,7 @@ struct ZuuppaDetailsView: View {
                 )
             }
             .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(.hidden)
 
             footer
                 .background(
@@ -136,8 +144,8 @@ struct ZuuppaDetailsView: View {
 
             Button(action: { model.submitDetails(onDone: onContinue) }) {
                 HStack {
-                    if model.isSubmittingDetails { ProgressView().tint(ZuuppaColor.accentText) }
-                    Text(model.isSubmittingDetails ? "Saving…" : "Continue")
+                    if showSaving { ProgressView().tint(ZuuppaColor.accentText) }
+                    Text(showSaving ? "Saving…" : "Continue")
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
@@ -147,6 +155,17 @@ struct ZuuppaDetailsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .disabled(model.isSubmittingDetails)
+            // Reveal "Saving…" only after the submit has been in flight past a short
+            // delay — a fast submit finishes first, so the button stays "Continue"
+            // and the step swaps to pay with no spinner flash. The switch itself is
+            // unanimated so it never cross-fades into the step transition.
+            .animation(nil, value: showSaving)
+            .task(id: model.isSubmittingDetails) {
+                guard model.isSubmittingDetails else { showSaving = false; return }
+                try? await Task.sleep(for: savingSpinnerDelay)
+                guard !Task.isCancelled else { return }
+                showSaving = true
+            }
 
             if model.detailsAreSkippable {
                 Button("Skip") {
