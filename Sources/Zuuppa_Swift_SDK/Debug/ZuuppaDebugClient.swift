@@ -24,13 +24,12 @@ public struct ZuuppaDebugClient {
     /// intent including its one-time `client_secret`, ready to hand to the sheet.
     ///
     /// - `mode`: "custom" (default) or "order".
-    /// - `amountUsdCents`: for a USD-priced custom intent (with `acceptedTokens`).
-    /// - `acceptedTokens`: pay-in tokens the buyer chooses among (USD/order modes).
+    /// - `amountUsdCents`: the USD amount for a custom intent (with `acceptedTokens`).
+    ///   Custom payments are always USD-priced; the buyer picks a token to lock it.
+    /// - `acceptedTokens`: pay-in tokens the buyer chooses among (custom/order modes).
     ///   Each is `["kind": "sol"]` or `["kind": "spl", "mint": "…"]`.
     /// - `cart`: order-mode line items, each `["item_id": "…", "quantity": n]`.
     public func createIntent(
-        expectedLamports: Int64? = nil,
-        mint: String? = nil,
         reference: String? = nil,
         expiresInSecs: Int64? = nil,
         mode: String? = nil,
@@ -40,8 +39,6 @@ public struct ZuuppaDebugClient {
     ) async throws -> ZuuppaIntent {
         var body: [String: Any] = [:]
         if let mode, !mode.isEmpty { body["mode"] = mode }
-        if let expectedLamports { body["expected_lamports"] = expectedLamports }
-        if let mint, !mint.isEmpty { body["mint"] = mint }
         if let amountUsdCents { body["amount_usd_cents"] = amountUsdCents }
         if let acceptedTokens { body["accepted_tokens"] = acceptedTokens }
         if let cart { body["cart"] = cart }

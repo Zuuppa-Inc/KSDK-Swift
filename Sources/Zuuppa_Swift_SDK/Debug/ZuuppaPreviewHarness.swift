@@ -18,10 +18,8 @@ import SwiftUI
 /// #endif
 /// ```
 /// or just open the `#Preview`s at the bottom of this file in Xcode.
-/// The three intent shapes the harness can create.
+/// The intent shapes the harness can create.
 private enum HarnessMode: String, CaseIterable, Identifiable {
-    /// custom + fixed token amount (legacy: expected_lamports/mint).
-    case customToken = "Custom · token"
     /// custom + USD amount (buyer picks a token to lock it).
     case customUSD = "Custom · USD"
     /// order (cart priced server-side from catalog items).
@@ -32,7 +30,7 @@ private enum HarnessMode: String, CaseIterable, Identifiable {
 /// One editable cart row for order mode.
 private struct HarnessCartLine: Identifiable {
     let id = UUID()
-    var itemID: String = "39d7ac65-cd48-4179-8ea9-f6cf88bca646"
+    var itemID: String = "1d22e848-3fc7-4341-b05d-96f0dd9bb032"
     var quantity: String = "1"
 }
 
@@ -44,12 +42,10 @@ public struct ZuuppaPreviewHarness: View {
     // Mac's LAN IP here instead.
     @State private var baseURL: String
     @State private var apiKey: String
-    @State private var amountSOL: String = "0.01"
-    @State private var mint: String = ""
     @State private var reference: String = ""
 
     // Pricing mode + USD/order fields.
-    @State private var mode: HarnessMode = .customToken
+    @State private var mode: HarnessMode = .customUSD
     @State private var amountUSD: String = "1.00"
     // Accepted pay-in tokens (USD/order modes). The buyer picks among these.
     @State private var acceptSOL = true
@@ -103,12 +99,6 @@ public struct ZuuppaPreviewHarness: View {
                 }
 
                 switch mode {
-                case .customToken:
-                    Section("Intent (fixed token amount)") {
-                        LabeledField(label: mint.isEmpty ? "Amount (SOL)" : "Amount (base units)", text: $amountSOL, mono: true)
-                        LabeledField(label: "SPL mint (blank = SOL)", text: $mint, mono: true)
-                        LabeledField(label: "Reference (optional)", text: $reference)
-                    }
                 case .customUSD:
                     Section("Intent (USD-priced)") {
                         LabeledField(label: "Amount (USD)", text: $amountUSD, mono: true)
@@ -231,12 +221,6 @@ public struct ZuuppaPreviewHarness: View {
         do {
             let created: ZuuppaIntent
             switch mode {
-            case .customToken:
-                created = try await client.createIntent(
-                    expectedLamports: parsedExpected(),
-                    mint: mint.isEmpty ? nil : mint,
-                    reference: ref
-                )
             case .customUSD:
                 let tokens = buildAcceptedTokens()
                 guard !tokens.isEmpty else { error = "Select at least one accepted token."; return }
@@ -288,17 +272,6 @@ public struct ZuuppaPreviewHarness: View {
             out.append(["item_id": id, "quantity": qty])
         }
         return out
-    }
-
-    /// SOL amount → lamports, or raw base units when a mint is set.
-    private func parsedExpected() -> Int64? {
-        let raw = amountSOL.trimmingCharacters(in: .whitespaces)
-        if mint.isEmpty {
-            guard let sol = Double(raw), sol > 0 else { return nil }
-            return Int64((sol * 1_000_000_000).rounded())
-        } else {
-            return Int64(raw)
-        }
     }
 
     private func describe(_ r: ZuuppaCheckoutResult) -> String {
