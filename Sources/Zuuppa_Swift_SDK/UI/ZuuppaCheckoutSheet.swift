@@ -347,8 +347,16 @@ struct ZuuppaCheckoutScreen: View {
     }
 
     /// The QR code on a white plate (white in both appearances so it always scans).
+    ///
+    /// Encodes the server's Solana Pay URI when there is one, so a wallet opens with the
+    /// amount and the token already filled in. The status one is preferred over the create
+    /// one because it is rebuilt on every poll — after a token selection or a partial
+    /// payment it asks for what is actually owed now. The bare address is the last resort
+    /// (an intent with no locked amount yet), and the amount above and the address below
+    /// stay on screen either way for a wallet that won't take the URI.
     private var qrPlate: some View {
-        QRView(string: model.intent.address, size: 240)
+        QRView(string: model.status?.paymentUri ?? model.intent.paymentUri ?? model.intent.address,
+               size: 240)
             .padding(18)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 24))
     }
@@ -533,7 +541,7 @@ struct ZuuppaCheckoutScreen: View {
     private var processingSubtitle: String {
         switch model.walletFlow {
         // The callback returned; now we're waiting for the network to detect it.
-        case .submitted: return "Waiting for the payment to confirm on-chain — this usually takes a few seconds. Keep this screen open."
+        case .submitted: return "Waiting for the payment to confirm on-chain. This usually takes a few seconds, so keep this screen open."
         // The wallet is open / signing. Keep it vague enough for any wallet.
         default: return "Complete the payment in your wallet to continue."
         }

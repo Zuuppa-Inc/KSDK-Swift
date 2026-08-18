@@ -160,7 +160,7 @@ app.post("/api/checkout", async (req, res) => {
 });
 ```
 
-Two things to get right:
+Three things to get right:
 
 1. **Forward `client_secret`.** Without it the sheet can't poll and shows
    *"This payment is missing its client_secret…"*. It is returned **only** on the
@@ -168,6 +168,13 @@ Two things to get right:
    `client_secret: null`.
 2. **Create it when the buyer is ready to pay.** Every intent has a fixed
    **10-minute** window; don't mint one on app launch.
+3. **Marketplaces: one extra header.** If you are an approved
+   [marketplace](https://zuuppa.com/docs/07-marketplaces), add
+   `X-Zuuppa-On-Behalf-Of: <seller_id>` to the create call and include the buyer's
+   `customer.email` (required for a seller's payment). The `client_secret` you
+   forward works exactly the same, and the sheet needs no configuration to know a
+   seller is involved: the account name it shows and the label in the QR are the
+   seller's, because that is who the buyer is paying.
 
 ---
 
@@ -292,13 +299,19 @@ Steps appear only when they apply, in this order:
 |---|---|---|
 | **Choose how to pay** | The intent is USD-priced and its amount isn't locked yet (`accepted_tokens` present, `expected_lamports: null`) | Lists the tokens you accept with names + logos. Tapping one calls [`POST /intents/select-token`](https://zuuppa.com/docs/03-api-reference#post-intentsselect-token), which converts USD → base units at spot and **locks** the amount. |
 | **Your details** | `config.fields` collects anything | Name / email / address form with per-country address formats and validation. Submits to [`POST /intents/details`](https://zuuppa.com/docs/03-api-reference#post-intentsdetails). |
-| **Pay** | Always | Amount, a QR of the deposit address, the address as tappable text (tap either to copy), a live status line, and the optional wallet button. |
+| **Pay** | Always | Amount, a QR of the server's `payment_uri` (so a wallet opens pre-filled), the address as tappable text (tap either to copy), a live status line, and the optional wallet button. |
 | **Confirmation** | A terminal state is reached | Success/expired/refunded summary, then the sheet **auto-dismisses after ~2s** on success. |
 
 Behaviour worth knowing:
 
-- The QR encodes the **bare deposit address** (not a `solana:` URI), so any wallet
-  scanner works.
+- The QR encodes the server's `payment_uri`, a Solana Pay URI carrying the amount,
+  the SPL mint and the account name, so a wallet opens with the payment already
+  filled in. It falls back to the **bare deposit address** when there's no URI to
+  use (no locked amount yet, or the intent is no longer payable), and the amount and
+  address stay on screen as text either way, for a wallet that won't take the URI.
+  Nothing is assembled client-side: `ZuuppaStatus.paymentUri` is preferred over
+  `ZuuppaIntent.paymentUri` because the server rebuilds it on every poll, so after a
+  partial payment it asks for the shortfall rather than the original total.
 - Polling is `GET /intents/status?client_secret=…` every `pollInterval`
   (3s default) and stops at a terminal state. Transient network errors are shown
   softly and polling continues.
@@ -437,6 +450,12 @@ config.fields.address = .optional
   [`POST /intents/details`](https://zuuppa.com/docs/03-api-reference#post-intentsdetails)
   and then appear as `customer_details` on the intent: in the dashboard, in
   `GET /status`, and in your webhook payloads.
+- Only the fields you switch on are sent. A `.off` field is omitted entirely.
+  That's safe even when your server already attached a `customer` block at create
+  time, because the endpoint **merges**: turning `email` off here does not clear an
+  email your backend supplied. Marketplace integrations rely on this, since a
+  payment for a seller can't be created without the buyer's email in the first
+  place, so there is usually no reason to ask for it twice.
 - The step is skipped if the intent has no `client_secret` (nothing could be
   submitted), rather than blocking the payment.
 
@@ -472,6 +491,11 @@ What you decode from your server and hand to the sheet.
 | `priceUsdCents` | `Int64?` | Set for a USD-denominated intent. |
 | `acceptedTokens` | `[ZuuppaAcceptedToken]?` | Pay-in choices, until the asset is pinned. |
 | `lineItems` | `[ZuuppaLineItem]` | Cart snapshot for order-mode intents; empty otherwise. |
+
+> **`lineItems` is decoded, not rendered.** Both `ZuuppaIntent` and `ZuuppaStatus`
+> parse the order-mode cart snapshot, but no view bundled with the SDK draws it. If
+> you want an itemised summary in the sheet, read `intent.lineItems` and build it in
+> your own UI.
 
 Convenience: `isSOL`, `decimals`, `assetLabel`, `isUsdPriced`,
 `needsTokenSelection`.

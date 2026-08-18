@@ -30,7 +30,7 @@ private enum HarnessMode: String, CaseIterable, Identifiable {
 /// One editable cart row for order mode.
 private struct HarnessCartLine: Identifiable {
     let id = UUID()
-    var itemID: String = "1d22e848-3fc7-4341-b05d-96f0dd9bb032"
+    var itemID: String = "51a910e8-599a-4b32-9b5f-107b4f86415e"
     var quantity: String = "1"
 }
 
@@ -86,7 +86,7 @@ public struct ZuuppaPreviewHarness: View {
                 Section("Server (DEBUG only)") {
                     LabeledField(label: "Base URL", text: $baseURL, mono: true)
                     LabeledField(label: "Secret key (sk_)", text: $apiKey, mono: true, secure: true)
-                    Text("The sk_ key is your SERVER's job in production — it's used here only to create a test intent locally. Never ship it in an app.")
+                    Text("The sk_ key is your SERVER's job in production. It's used here only to create a test intent locally. Never ship it in an app.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -244,7 +244,7 @@ public struct ZuuppaPreviewHarness: View {
                 )
             }
             guard created.clientSecret != nil else {
-                error = "Server returned no client_secret. (Reusing a reference returns the existing intent without one — change the reference.)"
+                error = "Server returned no client_secret. (Reusing a reference returns the existing intent without one, so change the reference.)"
                 return
             }
             intent = created
@@ -276,7 +276,7 @@ public struct ZuuppaPreviewHarness: View {
 
     private func describe(_ r: ZuuppaCheckoutResult) -> String {
         switch r {
-        case .settled(let s): return "Settled" + (s.map { " — \($0.destinationUi) \($0.asset)" } ?? "")
+        case .settled(let s): return "Settled" + (s.map { ": \($0.destinationUi) \($0.asset)" } ?? "")
         case .expired: return "Expired"
         case .refunded: return "Refunded"
         case .cancelled: return "Cancelled"
@@ -322,7 +322,11 @@ extension ZuuppaIntent {
         expectedLamports: 10_000_000,
         status: "pending",
         receivedLamports: 0,
-        reference: "preview-order"
+        reference: "preview-order",
+        // What the server sends for a payable intent, so the preview's QR is the same
+        // payload a real one carries rather than a bare address.
+        paymentUri:
+            "solana:7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU?amount=0.01&label=Preview%20Store"
     )
 
     /// A pending USD-priced intent ($12.50) with two accepted tokens and no locked
@@ -373,19 +377,19 @@ extension ZuuppaStatus {
 // Static: the checkout screen itself, waiting for payment. No server needed —
 // polling will just fail softly against the fake client_secret; the layout
 // renders. Good for iterating on UI.
-#Preview("Checkout — awaiting (offline)") {
+#Preview("Checkout: awaiting (offline)") {
     ZuuppaCheckoutScreen(intent: .previewPending)
 }
 
 // Static: the token-select step for a USD-priced intent. No server needed — the
 // per-token quote amounts stay blank (the quote call fails softly against the fake
 // client_secret); the token rows + USD total render.
-#Preview("Checkout — token select (offline)") {
+#Preview("Checkout: token select (offline)") {
     ZuuppaCheckoutScreen(intent: .previewUsdUnlocked)
 }
 
 // Static: QR-only variant (no wallet button).
-#Preview("Checkout — QR only (offline)") {
+#Preview("Checkout: QR only (offline)") {
     var cfg = ZuuppaConfig.default
     cfg.showPayWithWallet = false
     return ZuuppaCheckoutScreen(intent: .previewPending, config: cfg)
@@ -394,7 +398,7 @@ extension ZuuppaStatus {
 // Static: the buyer-details step (name required, email required, address
 // optional). No server needed — the layout renders; Continue would attempt a
 // submit against the fake client_secret.
-#Preview("Checkout — details step (offline)") {
+#Preview("Checkout: details step (offline)") {
     var cfg = ZuuppaConfig.default
     cfg.fields = ZuuppaCheckoutFields(name: .required, email: .required, address: .optional)
     return ZuuppaCheckoutScreen(intent: .previewPending, config: cfg)

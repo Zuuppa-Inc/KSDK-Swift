@@ -111,6 +111,15 @@ public struct ZuuppaIntent: Codable, Identifiable, Sendable, Equatable {
     /// Cart snapshot for order-mode intents (empty for custom). Same items the
     /// dashboard and outbound webhooks see.
     public let lineItems: [ZuuppaLineItem]
+    /// Solana Pay URI for `address`, built by the server: `solana:<address>` with
+    /// the amount, the SPL mint and the account name already in it, so a wallet
+    /// opens pre-filled. This is the QR payload — prefer it over `address`.
+    ///
+    /// Nil when the intent can no longer be paid (settled, expired, cancelled), so
+    /// there is never a live-looking code for a dead address; and nil before a
+    /// USD-priced intent locks a token, since there is no amount to put in it yet.
+    /// After `selectToken` the fresh URI arrives on `ZuuppaStatus`, not here.
+    public let paymentUri: String?
 
     enum CodingKeys: String, CodingKey {
         case id, address, mint, reference, status, mode
@@ -121,6 +130,7 @@ public struct ZuuppaIntent: Codable, Identifiable, Sendable, Equatable {
         case priceUsdCents = "price_usd_cents"
         case acceptedTokens = "accepted_tokens"
         case lineItems = "line_items"
+        case paymentUri = "payment_uri"
     }
 
     public init(
@@ -136,7 +146,8 @@ public struct ZuuppaIntent: Codable, Identifiable, Sendable, Equatable {
         mode: String? = nil,
         priceUsdCents: Int64? = nil,
         acceptedTokens: [ZuuppaAcceptedToken]? = nil,
-        lineItems: [ZuuppaLineItem] = []
+        lineItems: [ZuuppaLineItem] = [],
+        paymentUri: String? = nil
     ) {
         self.id = id
         self.address = address
@@ -151,6 +162,7 @@ public struct ZuuppaIntent: Codable, Identifiable, Sendable, Equatable {
         self.priceUsdCents = priceUsdCents
         self.acceptedTokens = acceptedTokens
         self.lineItems = lineItems
+        self.paymentUri = paymentUri
     }
 
     // Custom decode so `line_items` (omitted for custom intents) defaults to []
@@ -170,6 +182,7 @@ public struct ZuuppaIntent: Codable, Identifiable, Sendable, Equatable {
         priceUsdCents = try c.decodeIfPresent(Int64.self, forKey: .priceUsdCents)
         acceptedTokens = try c.decodeIfPresent([ZuuppaAcceptedToken].self, forKey: .acceptedTokens)
         lineItems = try c.decodeIfPresent([ZuuppaLineItem].self, forKey: .lineItems) ?? []
+        paymentUri = try c.decodeIfPresent(String.self, forKey: .paymentUri)
     }
 
     // Encoding mirrors the wire shape: omit `line_items` when empty (matches the
@@ -189,6 +202,7 @@ public struct ZuuppaIntent: Codable, Identifiable, Sendable, Equatable {
         try c.encodeIfPresent(priceUsdCents, forKey: .priceUsdCents)
         try c.encodeIfPresent(acceptedTokens, forKey: .acceptedTokens)
         if !lineItems.isEmpty { try c.encode(lineItems, forKey: .lineItems) }
+        try c.encodeIfPresent(paymentUri, forKey: .paymentUri)
     }
 
     /// True for SOL (no SPL mint).
@@ -277,9 +291,15 @@ public struct ZuuppaStatus: Codable, Sendable, Equatable {
     /// Cart snapshot for order-mode intents (empty for custom). Same items the
     /// dashboard and outbound webhooks see.
     public let lineItems: [ZuuppaLineItem]
+    /// Solana Pay URI for `address`, built by the server — see
+    /// ``ZuuppaIntent/paymentUri``. This is the one to render: it is rebuilt on every
+    /// status read, so after a token selection or a partial payment it carries the
+    /// amount actually owed now. Nil once the intent can no longer be paid.
+    public let paymentUri: String?
 
     enum CodingKeys: String, CodingKey {
         case id, address, mint, status, reference, action, message, settlement, mode
+        case paymentUri = "payment_uri"
         case mintDecimals = "mint_decimals"
         case expectedLamports = "expected_lamports"
         case receivedLamports = "received_lamports"
@@ -311,6 +331,7 @@ public struct ZuuppaStatus: Codable, Sendable, Equatable {
         acceptedTokens = try c.decodeIfPresent([ZuuppaAcceptedToken].self, forKey: .acceptedTokens)
         // `line_items` is omitted for custom intents (serde skip), so default.
         lineItems = try c.decodeIfPresent([ZuuppaLineItem].self, forKey: .lineItems) ?? []
+        paymentUri = try c.decodeIfPresent(String.self, forKey: .paymentUri)
     }
 
     // Encoding is only needed for tests/round-trips; not used by the SDK at runtime.
@@ -333,6 +354,7 @@ public struct ZuuppaStatus: Codable, Sendable, Equatable {
         try c.encodeIfPresent(priceUsdCents, forKey: .priceUsdCents)
         try c.encodeIfPresent(acceptedTokens, forKey: .acceptedTokens)
         if !lineItems.isEmpty { try c.encode(lineItems, forKey: .lineItems) }
+        try c.encodeIfPresent(paymentUri, forKey: .paymentUri)
     }
 
     public var isSOL: Bool { mint == nil }
